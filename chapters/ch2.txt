@@ -1,0 +1,25 @@
+# 第二章：終點站
+@title 第二章　終點站
+@bg train.svg
+@bgm tense.wav
+@show girl normal center
+girl：到了。
+@if trust>=1 -> trusted
+@jump distrust
+
+*trusted
+@show girl smile center
+girl：謝謝你剛才願意聽我說。
+girl：下車吧，這次，你不會再迷路了。
+@ending 平安抵達
+@jump fin
+
+*distrust
+@show girl sad center
+girl：你一直不相信我……沒關係。
+girl：那就再坐一趟吧。
+@ending 無盡輪迴
+@jump fin
+
+*fin
+@end

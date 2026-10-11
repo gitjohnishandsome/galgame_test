@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>我的文字冒險</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <div id="bg" class="layer"></div>
+  <div id="cg" class="layer"></div>
+  <div id="sprites">
+    <img id="spr-left" class="spr left" alt="">
+    <img id="spr-center" class="spr center" alt="">
+    <img id="spr-right" class="spr right" alt="">
+  </div>
+
+  <div id="chapter-title"></div>
+
+  <div id="textbox">
+    <div id="name"></div>
+    <div id="text"></div>
+    <div id="next-mark">▼</div>
+  </div>
+
+  <div id="menubar">
+    <button data-act="save">存檔</button>
+    <button data-act="load">讀檔</button>
+    <button data-act="history">歷史</button>
+    <button data-act="skip" id="btn-skip">跳過</button>
+    <button data-act="mute" id="btn-mute">音樂 開</button>
+    <button data-act="title">標題</button>
+  </div>
+
+  <div id="choices"></div>
+
+  <div id="banner"></div>
+
+  <div id="title-screen" class="panel">
+    <h1 id="game-title"></h1>
+    <p id="game-subtitle"></p>
+    <div class="menu">
+      <button data-act="new">開始遊戲</button>
+      <button data-act="continue" id="btn-continue">繼續遊戲</button>
+      <button data-act="load">讀取存檔</button>
+      <button data-act="chapters">章節選擇</button>
+      <button data-act="endings">結局列表</button>
+      <button data-act="clear">清除記錄</button>
+    </div>
+  </div>
+
+  <div id="panel" class="panel hidden">
+    <div id="panel-head"><span id="panel-title"></span><button data-act="closepanel">✕</button></div>
+    <div id="panel-body"></div>
+  </div>
+</div>
+<script src="engine.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "girl": {
+    "name": "小夜",
+    "color": "#ffb3c1",
+    "sprites": { "normal": "girl_normal.svg", "smile": "girl_smile.svg", "sad": "girl_sad.svg" }
+  },
+  "unknown": { "name": "？？？", "color": "#cccccc", "sprites": {} }
+}

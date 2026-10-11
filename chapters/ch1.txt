@@ -1,0 +1,42 @@
+# 第一章：末班車
+# 語法：@指令 參數 ／ 角色id：台詞 ／ 沒有角色的一行 = 旁白 ／ *標籤 ／ @choice 選項區塊
+@title 第一章　末班車
+@bg station.svg
+@bgm night.wav
+深夜的月台只剩下我一個人。
+手機顯示十二點四十分，這是今天最後一班車。
+@se ding.wav
+遠處傳來進站的聲音。
+@show girl normal center
+unknown：……你也在等車嗎？
+@show girl smile center
+girl：不好意思，嚇到你了。我叫小夜。
+girl：這班車，不太一樣喔。
+
+@choice
+- 「哪裡不一樣？」 -> ask
+- 「我不想上去。」 -> refuse
+@endchoice
+
+*ask
+@set trust=1
+@show girl normal center
+girl：車廂裡很安靜，安靜到你會聽見自己的名字。
+@jump board
+
+*refuse
+@set trust=0
+@show girl sad center
+girl：這樣啊……可是，月台上也不會比較安全。
+@jump board
+
+*board
+@hide center
+@bg train.svg
+@bgm tense.wav
+車門在身後關上。
+窗外一片漆黑，只有月亮跟著我們。
+@cg moon.svg
+我忽然意識到，這班車根本沒有停靠任何一站。
+@cg off
+@chapter ch2
