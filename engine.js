@@ -9,7 +9,7 @@ const LS = {
   del(k) { try { localStorage.removeItem(P + k); } catch (e) {} }
 };
 const clone = o => JSON.parse(JSON.stringify(o));
-const DIR = { bg: 'assets/bg/', cg: 'assets/cg/', chars: 'assets/chars/', bgm: 'assets/bgm/', se: 'assets/se/' };
+const DIR = { bg: 'assets/bg/', cg: 'assets/cg/', chars: 'assets/chars/', bgm: 'assets/bgm/', se: 'assets/se/', voice: 'assets/voice/' };
 const SLOTS = 6;
 const POS = ['left', 'center', 'right'];
 
@@ -25,6 +25,7 @@ let skipMode = false, holding = false, suppressClick = false;
 let bannerCb = null;
 let read = LS.get('read', {});
 let muted = LS.get('mute', false);
+const vol = Object.assign({ master: 0.8, bgm: 0.75, voice: 1 }, LS.get('vol', {}));
 
 const blankV = () => ({ bg: null, cg: null, bgm: null, spr: { left: null, center: null, right: null } });
 
@@ -80,6 +81,7 @@ function assetsOf(ch) {
     else if (op.t === 'cg' && a[0] && a[0] !== 'off') list.push(DIR.cg + a[0]);
     else if (op.t === 'bgm' && a[0] && a[0] !== 'off') list.push(DIR.bgm + a[0]);
     else if (op.t === 'se' && a[0]) list.push(DIR.se + a[0]);
+    else if (op.t === 'voice' && a[0] && a[0] !== 'off') list.push(DIR.voice + a[0]);
     else if (op.t === 'show' && chars[a[0]] && chars[a[0]].sprites[a[1]]) list.push(DIR.chars + chars[a[0]].sprites[a[1]]);
   }
   return [...new Set(list)];
@@ -124,7 +126,10 @@ function applyV(V) {
 // ---------- 音訊 ----------
 const bgmEl = new Audio(); bgmEl.loop = true;
 let fadeT = null;
-const targetVol = () => (muted ? 0 : 0.6);
+const targetVol = () => (muted ? 0 : vol.master * vol.bgm);
+const voiceEl = new Audio();
+function applyVolumes() { bgmEl.volume = targetVol(); voiceEl.volume = muted ? 0 : vol.master * vol.voice; }
+function playVoice(n) { voiceEl.pause(); if (!n || n === 'off') return; voiceEl.src = DIR.voice + n; voiceEl.volume = muted ? 0 : vol.master * vol.voice; voiceEl.play().catch(() => {}); }
 function setBgm(n) {
   if (S) S.V.bgm = n;
   const src = n ? new URL(DIR.bgm + n, location.href).href : null;
@@ -145,15 +150,16 @@ function setBgm(n) {
     if (bgmEl.volume <= 0) { clearInterval(fadeT); start(); }
   }, 40);
 }
-function playSe(n) { const a = new Audio(DIR.se + n); a.volume = muted ? 0 : 0.8; a.play().catch(() => {}); }
+function playSe(n) { const a = new Audio(DIR.se + n); a.volume = muted ? 0 : vol.master * 0.9; a.play().catch(() => {}); }
 function setMute(m) {
   muted = m; LS.set('mute', m);
-  bgmEl.volume = targetVol();
+  applyVolumes();
   $('#btn-mute').textContent = '音樂 ' + (m ? '關' : '開');
 }
 
 // ---------- 執行流程 ----------
 function run() {
+  voiceEl.pause();
   while (true) {
     const op = cur.ops[S.idx];
     if (!op) { chapterEnd(); return; }
@@ -175,6 +181,7 @@ function exec(op) {
     case 'cg': setCg(a[0] === 'off' ? null : a[0]); break;
     case 'bgm': setBgm(a[0] === 'off' ? null : a[0]); break;
     case 'se': playSe(a[0]); break;
+    case 'voice': playVoice(a[0]); break;
     case 'show': {
       const pos = a[2] || 'center';
       for (const p of POS) if (p !== pos && S.V.spr[p] && S.V.spr[p].c === a[0]) setSpr(p, null);
@@ -480,6 +487,25 @@ $('#import-file').addEventListener('change', e => {
   if (f) importSaves(f);
 });
 
+function settingsPanel(body) {
+  const g1 = document.createElement('div'); g1.className = 'set-group';
+  g1.innerHTML = '<h3>音量設定</h3>';
+  [['master', '全部音量'], ['bgm', '背景音量'], ['voice', '語音音量']].forEach(([k, name]) => {
+    const row = document.createElement('div'); row.className = 'set-row';
+    const lb = document.createElement('label'); lb.textContent = name;
+    const rg = document.createElement('input'); rg.type = 'range'; rg.min = 0; rg.max = 100; rg.value = Math.round(vol[k] * 100);
+    const out = document.createElement('output'); out.textContent = rg.value + '%';
+    rg.oninput = () => { vol[k] = rg.value / 100; out.textContent = rg.value + '%'; LS.set('vol', vol); applyVolumes(); };
+    row.append(lb, rg, out); g1.appendChild(row);
+  });
+  const note = document.createElement('p'); note.className = 'set-note';
+  note.textContent = '全部音量也會影響音效。';
+  g1.appendChild(note);
+  const g2 = document.createElement('div'); g2.className = 'set-group';
+  g2.innerHTML = '<h3>存檔管理</h3><div class="set-btns"><button data-act="export">匯出存檔</button><button data-act="import">匯入存檔</button><button data-act="clear">清除記錄</button></div><p class="set-note">存檔只存在這個瀏覽器裡，換裝置或清除瀏覽器資料前請先匯出。</p>';
+  body.append(g1, g2);
+}
+
 function panelEmpty(body, msg) { body.innerHTML = `<p class="empty">${msg}</p>`; }
 
 document.addEventListener('click', e => {
@@ -524,6 +550,7 @@ document.addEventListener('click', e => {
         read = {}; toTitle();
       }
       break;
+    case 'settings': openPanel('遊戲設定', settingsPanel); break;
     case 'export': exportSaves(); break;
     case 'import': $('#import-file').click(); break;
     case 'closepanel': closePanel(); break;
