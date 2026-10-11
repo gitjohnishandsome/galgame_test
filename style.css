@@ -1,9 +1,9 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;user-select:none}
-#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;overflow:hidden;background:#111;color:#fff;transform-origin:center center}
+#stage{position:absolute;left:50%;top:50%;width:1216px;height:832px;overflow:hidden;background:#111;color:#fff;transform-origin:center center}
 .layer{position:absolute;inset:0;background-size:cover;background-position:center;transition:opacity .5s}
 #cg{opacity:0}
-#sprites .spr{position:absolute;bottom:0;height:640px;opacity:0;transition:opacity .35s;pointer-events:none}
+#sprites .spr{position:absolute;bottom:0;height:740px;opacity:0;transition:opacity .35s;pointer-events:none}
 .spr.left{left:60px}.spr.center{left:50%;transform:translateX(-50%)}.spr.right{right:60px}
 #textbox{position:absolute;left:60px;right:60px;bottom:30px;height:200px;padding:42px 36px 20px;background:rgba(10,10,25,.78);border:1px solid rgba(255,255,255,.2);border-radius:10px;display:none;cursor:pointer}
 #name{position:absolute;left:24px;top:-18px;padding:4px 22px;background:#2c3e66;border-radius:6px;font-size:26px;font-weight:700;display:none}
@@ -31,11 +31,11 @@ button.on{background:#a6402f}
 /* 標題畫面：背景圖滿版，名稱在左下，選單橫排在右下 */
 #title-screen{z-index:7;display:block;background:#0b1026 center/cover no-repeat}
 #title-screen::before{content:"";position:absolute;inset:0;background:linear-gradient(transparent 62%,rgba(0,0,0,.55))}
-#title-brand{position:absolute;left:44px;bottom:30px;width:420px}
-#title-brand h1{font-size:60px;line-height:1.1;letter-spacing:.04em;white-space:nowrap;text-shadow:0 0 6px #000,0 3px 10px rgba(0,0,0,.7)}
-#title-brand #game-logo{display:block;max-width:420px;max-height:260px}
+#title-brand{position:absolute;left:40px;bottom:30px;width:380px}
+#title-brand h1{font-size:56px;line-height:1.1;letter-spacing:.03em;white-space:nowrap;text-shadow:0 0 6px #000,0 3px 10px rgba(0,0,0,.7)}
+#title-brand #game-logo{display:block;max-width:380px;max-height:280px}
 #title-brand #game-subtitle{font-size:24px;letter-spacing:.2em;margin-top:6px;opacity:.9;text-shadow:0 2px 6px #000}
-.menu{position:absolute;left:480px;right:40px;bottom:34px;display:flex;justify-content:space-between}
+.menu{position:absolute;left:430px;right:30px;bottom:34px;display:flex;justify-content:space-between}
 .menu button{background:none;border:none;font-size:24px;font-weight:700;letter-spacing:.05em;padding:8px 6px;white-space:nowrap;text-shadow:0 0 6px #000,0 2px 8px #000;transition:transform .15s}
 .menu button:hover{background:none;transform:scale(1.12);color:#ffe9a8}
 .menu button[disabled]{opacity:.35;cursor:default;transform:none;color:#fff}
