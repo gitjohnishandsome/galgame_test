@@ -437,6 +437,49 @@ function slotList(body, mode) {
     body.appendChild(b);
   });
 }
+// ---------- 存檔匯出 / 匯入 ----------
+const SAVE_KEY = /^(save_(auto|\d+)|read|unlocked|endings|mute)$/;
+function exportSaves() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(P) && SAVE_KEY.test(k.slice(P.length))) data[k.slice(P.length)] = LS.get(k.slice(P.length), null);
+  }
+  const blob = new Blob([JSON.stringify({ game: cfg.title, version: 1, time: Date.now(), data })], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = URL.createObjectURL(blob);
+  a.download = `存檔_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function importSaves(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    let obj;
+    try { obj = JSON.parse(r.result); } catch (e) { alert('這不是有效的存檔檔案。'); return; }
+    if (!obj || obj.version !== 1 || !obj.data || typeof obj.data !== 'object') { alert('這不是有效的存檔檔案。'); return; }
+    const keys = Object.keys(obj.data).filter(k => SAVE_KEY.test(k));
+    if (!keys.length) { alert('檔案裡沒有可匯入的存檔。'); return; }
+    if (!confirm('匯入會覆蓋目前同名的存檔格，確定要繼續嗎？')) return;
+    for (const k of keys) {
+      const v = obj.data[k];
+      if (k === 'endings' || k === 'unlocked') LS.set(k, [...new Set([...(LS.get(k, [])), ...(Array.isArray(v) ? v : [])])]);
+      else if (k === 'read') LS.set(k, Object.assign(LS.get(k, {}), v && typeof v === 'object' ? v : {}));
+      else LS.set(k, v);
+    }
+    read = LS.get('read', {});
+    setMute(LS.get('mute', false));
+    $('#btn-continue').disabled = !LS.get('save_auto', null);
+    alert(`已匯入 ${keys.length} 項記錄。`);
+  };
+  r.readAsText(file);
+}
+$('#import-file').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (f) importSaves(f);
+});
+
 function panelEmpty(body, msg) { body.innerHTML = `<p class="empty">${msg}</p>`; }
 
 document.addEventListener('click', e => {
@@ -481,6 +524,8 @@ document.addEventListener('click', e => {
         read = {}; toTitle();
       }
       break;
+    case 'export': exportSaves(); break;
+    case 'import': $('#import-file').click(); break;
     case 'closepanel': closePanel(); break;
   }
 });
