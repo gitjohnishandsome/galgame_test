@@ -39,4 +39,9 @@ girl：這樣啊……可是，月台上也不會比較安全。
 @cg moon.svg
 我忽然意識到，這班車根本沒有停靠任何一站。
 @cg off
+# 直式插圖示範（不需要時整段刪掉即可）
+@pic sample_portrait.svg
+座位上放著一張泛黃的照片。
+照片裡的人，長得和小夜一模一樣。
+@pic off
 @chapter ch2
