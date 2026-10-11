@@ -605,7 +605,7 @@ document.addEventListener('click', e => {
 
 // ---------- 初始化 ----------
 function fit() {
-  const s = Math.min(innerWidth / 1216, innerHeight / 832);
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
   stage.style.transform = `translate(-50%,-50%) scale(${s})`;
 }
 addEventListener('resize', fit); fit();
