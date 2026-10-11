@@ -124,33 +124,71 @@ function applyV(V) {
 }
 
 // ---------- 音訊 ----------
+// 音量改用 Web Audio 的 GainNode 控制：iOS Safari 會忽略 <audio>.volume，只有 GainNode 才調得動。
+// 瀏覽器要求先有使用者操作才能啟動音訊，所以在第一次點擊 / 按鍵時才建立。
 const bgmEl = new Audio(); bgmEl.loop = true;
-let fadeT = null;
-const targetVol = () => (muted ? 0 : vol.master * vol.bgm);
 const voiceEl = new Audio();
-function applyVolumes() { bgmEl.volume = targetVol(); voiceEl.volume = muted ? 0 : vol.master * vol.voice; }
-function playVoice(n) { voiceEl.pause(); if (!n || n === 'off') return; voiceEl.src = DIR.voice + n; voiceEl.volume = muted ? 0 : vol.master * vol.voice; voiceEl.play().catch(() => {}); }
+let fadeT = null;
+let actx = null, bgmGain = null, voiceGain = null, seGain = null;
+const targetVol = () => (muted ? 0 : vol.master * vol.bgm);
+const voiceVol = () => (muted ? 0 : vol.master * vol.voice);
+const seVol = () => (muted ? 0 : vol.master * 0.9);
+
+function initAudio() {
+  if (actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    actx = new AC();
+    const mk = el => { const g = actx.createGain(); actx.createMediaElementSource(el).connect(g); g.connect(actx.destination); return g; };
+    bgmGain = mk(bgmEl); voiceGain = mk(voiceEl);
+    seGain = actx.createGain(); seGain.connect(actx.destination);
+    bgmEl.volume = voiceEl.volume = 1;
+    bgmGain.gain.value = bgmEl._lvl || 0;
+    applyVolumes();
+  } catch (e) { actx = null; bgmGain = voiceGain = seGain = null; }
+}
+function resumeAudio() { initAudio(); if (actx && actx.state === 'suspended') actx.resume(); }
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, resumeAudio, true));
+
+const getBgmLevel = () => (bgmGain ? bgmGain.gain.value : bgmEl.volume);
+function setBgmLevel(v) { bgmEl._lvl = v; if (bgmGain) bgmGain.gain.value = v; else bgmEl.volume = v; }
+function applyVolumes() {
+  setBgmLevel(targetVol());
+  if (voiceGain) voiceGain.gain.value = voiceVol(); else voiceEl.volume = voiceVol();
+}
+function playVoice(n) {
+  voiceEl.pause(); if (!n || n === 'off') return;
+  voiceEl.src = DIR.voice + n;
+  if (voiceGain) voiceGain.gain.value = voiceVol(); else voiceEl.volume = voiceVol();
+  voiceEl.play().catch(() => {});
+}
 function setBgm(n) {
   if (S) S.V.bgm = n;
   const src = n ? new URL(DIR.bgm + n, location.href).href : null;
-  if (n && bgmEl.src === src && !bgmEl.paused) { bgmEl.volume = targetVol(); return; }
+  if (n && bgmEl.src === src && !bgmEl.paused) { setBgmLevel(targetVol()); return; }
   clearInterval(fadeT);
   const start = () => {
     if (!n) { bgmEl.pause(); return; }
-    bgmEl.src = src; bgmEl.volume = 0;
+    bgmEl.src = src; setBgmLevel(0);
     const p = bgmEl.play(); if (p) p.catch(() => {});
     fadeT = setInterval(() => {
-      bgmEl.volume = Math.min(targetVol(), bgmEl.volume + 0.05);
-      if (bgmEl.volume >= targetVol()) clearInterval(fadeT);
+      setBgmLevel(Math.min(targetVol(), getBgmLevel() + 0.05));
+      if (getBgmLevel() >= targetVol()) clearInterval(fadeT);
     }, 60);
   };
   if (bgmEl.paused || !bgmEl.src) { start(); return; }
   fadeT = setInterval(() => {
-    bgmEl.volume = Math.max(0, bgmEl.volume - 0.1);
-    if (bgmEl.volume <= 0) { clearInterval(fadeT); start(); }
+    setBgmLevel(Math.max(0, getBgmLevel() - 0.1));
+    if (getBgmLevel() <= 0) { clearInterval(fadeT); start(); }
   }, 40);
 }
-function playSe(n) { const a = new Audio(DIR.se + n); a.volume = muted ? 0 : vol.master * 0.9; a.play().catch(() => {}); }
+function playSe(n) {
+  const a = new Audio(DIR.se + n);
+  if (actx && seGain) { try { actx.createMediaElementSource(a).connect(seGain); seGain.gain.value = seVol(); } catch (e) { a.volume = seVol(); } }
+  else a.volume = seVol();
+  a.play().catch(() => {});
+}
 function setMute(m) {
   muted = m; LS.set('mute', m);
   applyVolumes();
