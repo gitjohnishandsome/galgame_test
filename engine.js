@@ -27,7 +27,7 @@ let read = LS.get('read', {});
 let muted = LS.get('mute', false);
 const vol = Object.assign({ master: 0.8, bgm: 0.75, voice: 1 }, LS.get('vol', {}));
 
-const blankV = () => ({ bg: null, cg: null, bgm: null, spr: { left: null, center: null, right: null } });
+const blankV = () => ({ bg: null, cg: null, pic: null, bgm: null, spr: { left: null, center: null, right: null } });
 
 // ---------- 載入與解析 ----------
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }
@@ -79,6 +79,7 @@ function assetsOf(ch) {
     const a = (op.arg || '').split(/\s+/);
     if (op.t === 'bg' && a[0]) list.push(DIR.bg + a[0]);
     else if (op.t === 'cg' && a[0] && a[0] !== 'off') list.push(DIR.cg + a[0]);
+    else if (op.t === 'pic' && a[0] && a[0] !== 'off') list.push(DIR.cg + a[0]);
     else if (op.t === 'bgm' && a[0] && a[0] !== 'off') list.push(DIR.bgm + a[0]);
     else if (op.t === 'se' && a[0]) list.push(DIR.se + a[0]);
     else if (op.t === 'voice' && a[0] && a[0] !== 'off') list.push(DIR.voice + a[0]);
@@ -117,8 +118,17 @@ function setSpr(pos, c, e) {
   if (c && chars[c] && chars[c].sprites[e]) { img.src = DIR.chars + chars[c].sprites[e]; img.style.opacity = 1; }
   else img.style.opacity = 0;
 }
+// 直式插圖：pos = center | left | right，opts 含 'above' 時縮放在對話框上方的區域內
+function setPic(name, pos, above) {
+  const box = $('#pic'), img = $('#pic-img');
+  S.V.pic = name ? { name, pos: pos || 'center', above: !!above } : null;
+  if (!name) { box.classList.remove('on'); return; }
+  img.src = DIR.cg + name;
+  box.className = 'on ' + (pos || 'center') + (above ? ' above' : '');
+}
 function applyV(V) {
   setBg(V.bg); setCg(V.cg);
+  setPic(V.pic && V.pic.name, V.pic && V.pic.pos, V.pic && V.pic.above);
   for (const p of POS) setSpr(p, V.spr[p] && V.spr[p].c, V.spr[p] && V.spr[p].e);
   setBgm(V.bgm);
 }
@@ -225,6 +235,7 @@ function exec(op) {
     case 'title': showTitleCard(op.arg); return true;
     case 'bg': setBg(a[0]); break;
     case 'cg': setCg(a[0] === 'off' ? null : a[0]); break;
+    case 'pic': setPic(a[0] === 'off' ? null : a[0], a[1] === 'above' ? 'center' : a[1], a.includes('above')); break;
     case 'bgm': setBgm(a[0] === 'off' ? null : a[0]); break;
     case 'se': playSe(a[0]); break;
     case 'voice': playVoice(a[0]); break;

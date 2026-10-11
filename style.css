@@ -56,3 +56,12 @@ button.on{background:#a6402f}
 .set-note{font-size:18px;opacity:.6;margin-top:10px}
 
 #btn-mute{position:absolute;left:14px;top:12px;z-index:20;font-size:18px;padding:5px 14px}
+
+/* 直式插圖：整張圖等比例縮放，置中顯示在背景與立繪之上、對話框之下 */
+#pic{position:absolute;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:opacity .4s}
+#pic.on{opacity:1}
+#pic img{position:absolute;top:0;bottom:0;height:100%;width:auto;max-width:100%;object-fit:contain}
+#pic.center img{left:50%;transform:translateX(-50%)}
+#pic.left img{left:0}
+#pic.right img{right:0}
+#pic.above{bottom:260px}
