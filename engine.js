@@ -30,11 +30,11 @@ const vol = Object.assign({ master: 0.8, bgm: 0.75, voice: 1 }, LS.get('vol', {}
 const blankV = () => ({ bg: null, cg: null, pic: null, bgm: null, spr: { left: null, center: null, right: null } });
 
 // ---------- 載入與解析 ----------
-async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }
+async function getJSON(url) { const r = await fetch(url, { cache: 'no-cache' }); if (!r.ok) throw new Error(url + ' ' + r.status); return r.json(); }
 
 async function loadChapter(id) {
   if (cache[id]) return cache[id];
-  const r = await fetch(`chapters/${id}.txt`);
+  const r = await fetch(`chapters/${id}.txt`, { cache: 'no-cache' });
   if (!r.ok) throw new Error('找不到章節 ' + id);
   cache[id] = parse(await r.text());
   return cache[id];
