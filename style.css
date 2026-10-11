@@ -21,11 +21,11 @@ button.on{background:#a6402f}
 #banner small{font-size:22px;font-weight:400;opacity:.7}
 .panel{position:absolute;inset:0;background:rgba(8,8,20,.94);z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .panel.hidden{display:none}
-#title-screen{background:linear-gradient(#1b2a49,#0b1026);z-index:7}
-#title-screen h1{font-size:72px;letter-spacing:.08em;margin-bottom:6px}
+#title-screen{background:linear-gradient(#1b2a49,#0b1026);z-index:7;justify-content:flex-start;padding:170px 40px 36px}
+#title-screen h1{font-size:88px;letter-spacing:.08em;margin-bottom:6px}
 #title-screen #game-subtitle{font-size:26px;opacity:.7;margin-bottom:36px}
-.menu{display:flex;flex-direction:column;gap:10px;width:340px}
-.menu button{font-size:26px;padding:8px}
+.menu{display:flex;flex-direction:row;gap:14px;margin-top:auto}
+.menu button{font-size:24px;padding:12px 22px;white-space:nowrap}
 .menu button[disabled]{opacity:.35;cursor:default}
 #panel{justify-content:flex-start;padding:30px 80px}
 #panel-head{width:100%;display:flex;justify-content:space-between;font-size:36px;font-weight:700;margin-bottom:20px}
@@ -33,6 +33,6 @@ button.on{background:#a6402f}
 .slot,.item{display:block;width:100%;text-align:left;margin-bottom:12px;padding:14px 20px;font-size:24px}
 .hist-line{margin-bottom:12px}.hist-line b{color:#9fc3ff;margin-right:12px}
 .empty{opacity:.5}
-.menu-small{display:flex;gap:12px;margin-top:22px}
+.menu-small{display:flex;gap:12px;margin-top:16px}
 .menu-small button{font-size:20px;padding:8px 20px}
-.hint{font-size:18px!important;opacity:.55!important;margin:16px 0 0!important;max-width:560px;text-align:center}
+.hint{font-size:18px!important;opacity:.55!important;margin:12px 0 0!important;text-align:center}
