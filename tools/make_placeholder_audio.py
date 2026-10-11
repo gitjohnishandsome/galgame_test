@@ -15,4 +15,5 @@ def loop(notes, step):
 os.makedirs('assets/bgm', exist_ok=True); os.makedirs('assets/se', exist_ok=True)
 write('assets/bgm/night.wav', loop([220,262,330,392,330,262,196,262, 220,262,330,392,440,392,330,262], 0.5))
 write('assets/bgm/tense.wav', loop([147,156,147,156,131,139,131,139, 147,156,147,156,175,165,147,139], 0.5))
+write('assets/bgm/title.wav', loop([262,330,392,523,392,330,262,196, 262,330,392,523,587,523,392,330], 0.5))
 write('assets/se/ding.wav', note(880, 0.6, 0.4))

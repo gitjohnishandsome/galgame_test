@@ -54,3 +54,5 @@ button.on{background:#a6402f}
 .set-btns{display:flex;gap:12px;flex-wrap:wrap}
 .set-btns button{font-size:20px;padding:8px 20px}
 .set-note{font-size:18px;opacity:.6;margin-top:10px}
+
+#btn-mute{position:absolute;left:14px;top:12px;z-index:20;font-size:18px;padding:5px 14px}

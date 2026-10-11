@@ -3,6 +3,7 @@
   "subtitle": "最小可玩版本",
   "titleBg": "title.svg",
   "titleLogo": null,
+  "titleBgm": "title.wav",
   "chapters": [
     { "id": "ch1", "title": "第一章　末班車" },
     { "id": "ch2", "title": "第二章　終點站" }

@@ -148,7 +148,12 @@ function initAudio() {
     applyVolumes();
   } catch (e) { actx = null; bgmGain = voiceGain = seGain = null; }
 }
-function resumeAudio() { initAudio(); if (actx && actx.state === 'suspended') actx.resume(); }
+function resumeAudio() {
+  initAudio();
+  if (actx && actx.state === 'suspended') actx.resume();
+  // 瀏覽器擋掉自動播放時（例如一進網頁的標題音樂），第一次操作後補播
+  if (wantBgm && bgmEl.paused) setBgm(wantBgm);
+}
 ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, resumeAudio, true));
 
 const getBgmLevel = () => (bgmGain ? bgmGain.gain.value : bgmEl.volume);
@@ -163,7 +168,9 @@ function playVoice(n) {
   if (voiceGain) voiceGain.gain.value = voiceVol(); else voiceEl.volume = voiceVol();
   voiceEl.play().catch(() => {});
 }
+let wantBgm = null;
 function setBgm(n) {
+  wantBgm = n;
   if (S) S.V.bgm = n;
   const src = n ? new URL(DIR.bgm + n, location.href).href : null;
   if (n && bgmEl.src === src && !bgmEl.paused) { setBgmLevel(targetVol()); return; }
@@ -192,7 +199,8 @@ function playSe(n) {
 function setMute(m) {
   muted = m; LS.set('mute', m);
   applyVolumes();
-  $('#btn-mute').textContent = '音樂 ' + (m ? '關' : '開');
+  $('#btn-mute').textContent = (m ? '🔇 音樂 關' : '🔊 音樂 開');
+  if (!m && wantBgm && bgmEl.paused) setBgm(wantBgm);
 }
 
 // ---------- 執行流程 ----------
@@ -446,7 +454,7 @@ function toTitle() {
   el.choices.style.display = 'none'; el.banner.style.display = 'none';
   if (typing) clearInterval(typing.timer);
   typing = null;
-  setBgm(null);
+  setBgm(cfg.titleBgm || null);
   el.title.classList.remove('hidden');
   $('#btn-continue').disabled = !LS.get('save_auto', null);
 }
