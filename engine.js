@@ -549,6 +549,8 @@ addEventListener('resize', fit); fit();
   document.title = cfg.title;
   $('#game-title').textContent = cfg.title;
   $('#game-subtitle').textContent = cfg.subtitle || '';
+  if (cfg.titleBg) el.title.style.backgroundImage = `url(${DIR.bg + cfg.titleBg})`;
+  if (cfg.titleLogo) { const lg = $('#game-logo'); lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態
   toTitle();
