@@ -110,3 +110,4 @@ button.on{background:#a6402f}
 #title-brand{width:400px}
 #title-brand #game-logo,#title-brand #game-sublogo{width:400px;filter:brightness(1.35) contrast(1.08) saturate(1.1) drop-shadow(0 0 3px rgba(0,0,0,.8)) drop-shadow(0 3px 10px rgba(0,0,0,.65))}
 .menu{left:470px}
+#title-brand{align-items:flex-start;gap:8px}

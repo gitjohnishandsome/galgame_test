@@ -459,34 +459,66 @@ function startPlay() {
   el.box.style.display = 'none'; el.choices.style.display = 'none';
   waiting = null; skipMode = false; syncSkipBtn();
 }
-// 副標題圖（含上方細線與滴落的焦糖）內，文字那一行的垂直中心比例：用內容最多的那段列、避開右側滴落處
-function subTextCenterRatio(img) {
-  try {
-    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
-    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
-    const d = x.getImageData(0, 0, c.width, c.height).data;
-    const lim = Math.floor(c.width * 0.86), rows = [];
-    for (let y = 0; y < c.height; y++) { let n = 0; for (let xx = 0; xx < lim; xx++) if (d[(y * c.width + xx) * 4 + 3] > 40) n++; rows.push(n); }
-    // 把有內容的列合併成區段（容許 3 列以內的空隙），取內容最多的那段 = 英文文字行
-    const runs = []; let cur = null;
-    for (let y = 0; y < rows.length; y++) {
-      if (!rows[y]) continue;
-      if (cur && y - cur.end <= 3) { cur.end = y; cur.sum += rows[y]; } else { cur = { start: y, end: y, sum: rows[y] }; runs.push(cur); }
-    }
-    const best = runs.reduce((a, r) => (r.sum > a.sum ? r : a));
-    return (best.start + best.end) / 2 / c.height;
-  } catch (e) { return 0.5; }
+// 量出圖片「真正有內容」的範圍（忽略四周的透明留白與極淡的雜點），回傳原圖像素座標
+function contentBox(img) {
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, c.width, c.height).data;
+  const cols = new Uint16Array(c.width), rows = new Uint16Array(c.height), rowsL = new Uint16Array(c.height);
+  // 略過最外圈 4px：有些匯出的圖四周會有一圈不透明的細框，不能算進內容
+  const E = 4;
+  for (let y = E; y < c.height - E; y++) for (let xx = E; xx < c.width - E; xx++) if (d[(y * c.width + xx) * 4 + 3] > 60) { cols[xx]++; rows[y]++; }
+  const first = a => a.findIndex(v => v >= 2), last = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] >= 2) return i; return -1; };
+  const l = first(cols), r = last(cols);
+  // 另外只統計內容左側 84% 的列：右端常有滴落的裝飾，會把上下兩段內容連在一起
+  const lim = l + Math.floor((r - l + 1) * 0.84);
+  for (let y = E; y < c.height - E; y++) for (let xx = E; xx < lim; xx++) if (d[(y * c.width + xx) * 4 + 3] > 60) rowsL[y]++;
+  return { l, r, t: first(rows), b: last(rows), rows, rowsL, w: c.width, h: c.height };
 }
-// 讓副標題文字的中心，和右邊選單按鈕文字的中心在同一條水平線上
+// 標題 logo：不改圖檔，用 CSS 把四周透明留白「藏起來」，讓有內容的部分剛好等於指定寬度
+function fitLogo(img, width) {
+  try {
+    const bx = contentBox(img);
+    if (bx.r < bx.l || bx.b < bx.t) return null;
+    const sc = width / (bx.r - bx.l + 1);
+    img.style.width = Math.round(img.naturalWidth * sc) + 'px';
+    img.style.marginLeft = -Math.round(bx.l * sc) + 'px';
+    img.style.marginTop = -Math.round(bx.t * sc) + 'px';
+    img.style.marginBottom = -Math.round((bx.h - 1 - bx.b) * sc) + 'px';
+    // 裁掉內容範圍以外的部分（含四周的細框或雜點），只留下真正的 logo
+    img.style.clipPath = `inset(${bx.t * sc}px ${(bx.w - 1 - bx.r) * sc}px ${(bx.h - 1 - bx.b) * sc}px ${bx.l * sc}px)`;
+    return bx;
+  } catch (e) { return null; }
+}
+let subBox = null;
+function fitTitleLogos() {
+  const m = $('#game-logo'), sl = $('#game-sublogo'), W = 400;
+  if (m && !m.hidden && m.naturalWidth) fitLogo(m, W);
+  if (sl && !sl.hidden && sl.naturalWidth) subBox = fitLogo(sl, W);
+  alignTitle();
+}
+// 副標題文字那一行的垂直中心（原圖像素）：把有內容的列合併成區段（容許 3 列空隙），取內容最多的那段
+function subTextCenter(bx) {
+  const runs = []; let cur = null;
+  for (let y = bx.t; y <= bx.b; y++) {
+    if (bx.rowsL[y] < 2) continue;
+    if (cur && y - cur.end <= 3) { cur.end = y; cur.sum += bx.rowsL[y]; } else { cur = { start: y, end: y, sum: bx.rowsL[y] }; runs.push(cur); }
+  }
+  const best = runs.reduce((a, r) => (r.sum > a.sum ? r : a));
+  return (best.start + best.end) / 2;
+}
+// 讓副標題文字的中心，和右邊選單按鈕文字的中心在同一條水平線上（量出現在的差距後修正 bottom）
 function alignTitle() {
   const sub = $('#game-sublogo');
-  if (!sub || sub.hidden || !sub.naturalHeight || el.title.classList.contains('hidden')) return;
-  const sr = stage.getBoundingClientRect(), k = sr.width / stage.offsetWidth;
+  if (!sub || sub.hidden || !sub.naturalHeight || !subBox || el.title.classList.contains('hidden')) return;
+  const k = stage.getBoundingClientRect().width / stage.offsetWidth;
+  const r = sub.getBoundingClientRect();
+  const textY = r.top + subTextCenter(subBox) * (r.height / sub.naturalHeight);
   const b = document.querySelector('.menu button').getBoundingClientRect();
-  const btnCenter = ((b.top + b.bottom) / 2 - sr.top) / k;
-  const h = sub.offsetHeight;
-  const subBottom = btnCenter - subTextCenterRatio(sub) * h + h;
-  $('#title-brand').style.bottom = Math.round(stage.offsetHeight - subBottom) + 'px';
+  const delta = (textY - (b.top + b.bottom) / 2) / k;
+  const brand = $('#title-brand');
+  const cur = parseFloat(brand.style.bottom) || parseFloat(getComputedStyle(brand).bottom) || 0;
+  if (Math.abs(delta) > 0.3) brand.style.bottom = (cur + delta) + 'px';
 }
 addEventListener('resize', () => requestAnimationFrame(alignTitle));
 
@@ -498,7 +530,7 @@ function toTitle() {
   typing = null;
   setBgm(cfg.titleBgm || null);
   el.title.classList.remove('hidden');
-  requestAnimationFrame(alignTitle);
+  requestAnimationFrame(fitTitleLogos);
   $('#btn-continue').disabled = !LS.get('save_auto', null);
 }
 function newGame(chapterId) {
@@ -681,8 +713,8 @@ addEventListener('resize', fit); fit();
   $('#game-subtitle').textContent = cfg.subtitle || '';
   if (cfg.titleBg) el.title.style.backgroundImage = `url(${DIR.bg + cfg.titleBg})`;
   const sl = $('#game-sublogo');   // 舊版快取的 index.html 可能沒有這個元素，不要因此中斷
-  if (cfg.titleSubLogo && sl) { sl.onload = () => alignTitle(); sl.src = DIR.bg + cfg.titleSubLogo; sl.hidden = false; }
-  if (cfg.titleLogo) { const lg = $('#game-logo'); lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
+  if (cfg.titleSubLogo && sl) { sl.onload = fitTitleLogos; sl.src = DIR.bg + cfg.titleSubLogo; sl.hidden = false; }
+  if (cfg.titleLogo) { const lg = $('#game-logo'); lg.onload = fitTitleLogos; lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態
   toTitle();
