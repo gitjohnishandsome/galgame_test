@@ -102,3 +102,11 @@ button.on{background:#a6402f}
 #title-brand{width:360px;display:flex;flex-direction:column;align-items:stretch;gap:6px}
 #title-brand #game-logo,#title-brand #game-sublogo{display:block;width:360px;max-width:none;height:auto;filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))}
 #title-brand #game-sublogo[hidden],#title-brand #game-logo[hidden]{display:none}
+
+/* 標題 logo 可讀性：左下角加深色暈影，logo 提亮並加深色外光，放大一些 */
+#title-screen::before{background:
+  radial-gradient(ellipse 62% 52% at 14% 100%,rgba(0,0,0,.72),rgba(0,0,0,.35) 55%,transparent 80%),
+  linear-gradient(transparent 62%,rgba(0,0,0,.55))}
+#title-brand{width:400px}
+#title-brand #game-logo,#title-brand #game-sublogo{width:400px;filter:brightness(1.35) contrast(1.08) saturate(1.1) drop-shadow(0 0 3px rgba(0,0,0,.8)) drop-shadow(0 3px 10px rgba(0,0,0,.65))}
+.menu{left:470px}
