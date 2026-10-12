@@ -29,12 +29,12 @@
   </div>
 
   <div id="menubar">
-    <button data-act="save">存檔</button>
-    <button data-act="load">讀檔</button>
-    <button data-act="history">歷史</button>
-    <button data-act="skip" id="btn-skip">跳過</button>
-    <button data-act="settings">設定</button>
-    <button data-act="title">標題</button>
+    <button data-act="history" title="歷史紀錄" aria-label="歷史紀錄"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4z" fill="currentColor"/><path d="M8 8h8M8 12h5" stroke="#0b1026" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    <button data-act="skip" id="btn-skip" title="跳過已讀" aria-label="跳過已讀"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5l8 7-8 7V5zM13 5l8 7-8 7V5z" fill="currentColor"/></svg></button>
+    <button data-act="save" title="存檔" aria-label="存檔"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5V3z" fill="currentColor"/><path d="M8 3h7v5H8V3z" fill="#0b1026" opacity=".55"/><rect x="8" y="13" width="8" height="8" fill="#0b1026" opacity=".55"/></svg></button>
+    <button data-act="load" title="讀檔" aria-label="讀檔"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3V6z" fill="currentColor"/><path d="M12 17v-6M9 14l3-3 3 3" stroke="#0b1026" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <button data-act="settings" title="設定" aria-label="設定"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    <button data-act="title" title="回標題畫面" aria-label="回標題畫面"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H4v16h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8l4 4-4 4M19 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
 
   <div id="choices"></div>

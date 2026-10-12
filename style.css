@@ -65,3 +65,13 @@ button.on{background:#a6402f}
 #pic.left img{left:0}
 #pic.right img{right:0}
 #pic.above{bottom:260px}
+
+/* 遊戲中的功能列：圖示按鈕，放在對話框內右下角 */
+#textbox{bottom:24px;height:232px;padding:44px 36px 58px}
+#next-mark{bottom:62px}
+#pic.above{bottom:272px}
+#menubar{top:auto;bottom:36px;right:64px;gap:4px;z-index:6}
+#menubar button{width:42px;height:42px;padding:0;display:flex;align-items:center;justify-content:center;background:none;border:none;border-radius:50%;color:#a9c7ff;transition:transform .15s,color .15s}
+#menubar button svg{width:26px;height:26px}
+#menubar button:hover{background:rgba(120,160,255,.22);color:#fff;transform:scale(1.12)}
+#menubar button.on{background:rgba(120,160,255,.35);color:#fff}
