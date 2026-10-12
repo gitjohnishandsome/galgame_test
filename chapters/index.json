@@ -6,7 +6,17 @@
   "titleSubLogo": "IGSTD.png",
   "titleBgm": "House_of_Nightmare.mp3",
   "chapters": [
-    { "id": "ch1", "title": "第一章　末班車" },
-    { "id": "ch2", "title": "第二章　終點站" }
+    {
+      "id": "ch0",
+      "title": "第 0 場　夜跑"
+    },
+    {
+      "id": "ch1",
+      "title": "第一章　末班車"
+    },
+    {
+      "id": "ch2",
+      "title": "第二章　終點站"
+    }
   ]
 }

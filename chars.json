@@ -2,7 +2,25 @@
   "girl": {
     "name": "小夜",
     "color": "#ffb3c1",
-    "sprites": { "normal": "girl_normal.svg", "smile": "girl_smile.svg", "sad": "girl_sad.svg" }
+    "sprites": {
+      "normal": "girl_normal.svg",
+      "smile": "girl_smile.svg",
+      "sad": "girl_sad.svg"
+    }
   },
-  "unknown": { "name": "？？？", "color": "#cccccc", "sprites": {} }
+  "unknown": {
+    "name": "？？？",
+    "color": "#cccccc",
+    "sprites": {}
+  },
+  "shihan": {
+    "name": "林詩涵",
+    "color": "#ffd6a5",
+    "sprites": {}
+  },
+  "youran": {
+    "name": "陳宥然",
+    "color": "#a9c9ff",
+    "sprites": {}
+  }
 }
