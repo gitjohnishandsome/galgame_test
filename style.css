@@ -88,11 +88,8 @@ button.on{background:#a6402f}
 #text{font-size:32px;line-height:1.7;font-weight:700;letter-spacing:.08em;color:#fff;
   -webkit-text-stroke:5px #243a66;paint-order:stroke fill;
   text-shadow:0 2px 4px rgba(10,20,50,.6)}
-#name{left:96px;top:-52px;padding:0 34px;background:none;border-radius:0;font-size:32px;font-weight:900;letter-spacing:.12em;
+#name{left:104px;top:-52px;padding:0;background:none;border-radius:0;font-size:32px;font-weight:900;letter-spacing:.12em;
   -webkit-text-stroke:5px #243a66;paint-order:stroke fill;text-shadow:0 2px 4px rgba(10,20,50,.6)}
-#name::before,#name::after{content:"";position:absolute;top:50%;width:26px;height:26px;margin-top:-13px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 21C5 15 2 11 2 7.5A5 5 0 0 1 12 6a5 5 0 0 1 10 1.5C22 11 19 15 12 21z' fill='none' stroke='%238fb4ff' stroke-width='2.6'/%3E%3C/svg%3E") center/contain no-repeat}
-#name::before{left:0}
-#name::after{right:0;transform:scaleX(-1)}
 #next-mark{right:60px;bottom:66px;font-size:20px;color:#bcd4ff;letter-spacing:-.15em;-webkit-text-stroke:0}
 #pic.above{bottom:250px}
 #menubar{right:50px;bottom:14px}
