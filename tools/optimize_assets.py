@@ -7,13 +7,14 @@
     python tools/optimize_assets.py --check      只檢查素材大小，不轉檔
 
 做了什麼：
-  1. 掃描 assets/bg、assets/cg、assets/chars 裡的 PNG / JPG / BMP / TIFF，轉成 WebP。
+  1. 掃描 assets/bg、assets/cg 裡的 PNG / JPG / BMP / TIFF，轉成 WebP。
+     （assets/chars 立繪資料夾一律跳過，立繪要保持 PNG。）
   2. 過大的圖會縮小到合理尺寸（只縮小，不放大）。
   3. 原圖搬到 raw/（同樣的子資料夾），不會被刪掉；raw/ 已加入 .gitignore，不會上傳到 GitHub。
   4. 自動把 chapters/*.txt、chars.json、chapters/index.json 裡的舊檔名改成新檔名。
   5. 檢查音樂、音效、語音有沒有過大，並統計每一章要下載的素材總量。
 
-不會動：SVG、已經是 WebP 的圖、音訊檔本身。
+不會動：assets/chars（立繪）、SVG、已經是 WebP 的圖、音訊檔本身。
 """
 import argparse
 import re
@@ -33,14 +34,12 @@ ASSETS = ROOT / "assets"
 RAW = ROOT / "raw"
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-IMG_DIRS = ["bg", "cg", "chars"]
+IMG_DIRS = ["bg", "cg"]      # 立繪 assets/chars 必須維持 PNG，所以不處理
 
-# 畫面是 1216x832，背景 / CG 保留約 1.5 倍解析度；立繪顯示高度約 740px，保留約 2 倍
+# 畫面是 1216x832，背景 / CG 保留約 1.5 倍解析度
 MAX_BG = (1824, 1248)
-MAX_CHAR_H = 1480
 
-Q_OPAQUE = 85        # 不透明圖（背景、CG）
-Q_SPRITE = 90        # 有透明的立繪
+Q_OPAQUE = 85        # 背景、CG 的有損壓縮品質
 LOGO_ALPHA = 0.20    # bg / cg 內，透明（或半透明）像素超過這個比例的圖，視為 logo / 疊圖，用無損 WebP（畫面和原圖完全一樣）
 # 背景、CG 若只有零星的半透明像素（常見於匯出殘留），仍保留透明資訊，但用一般的有損壓縮
 
@@ -76,12 +75,7 @@ def alpha_fraction(im):
     return sum(hist[:250]) / (im.width * im.height)
 
 
-def target_size(w, h, folder):
-    if folder == "chars":
-        if h > MAX_CHAR_H:
-            s = MAX_CHAR_H / h
-            return round(w * s), MAX_CHAR_H
-        return w, h
+def target_size(w, h):
     s = min(MAX_BG[0] / w, MAX_BG[1] / h, 1)
     return (round(w * s), round(h * s)) if s < 1 else (w, h)
 
@@ -108,19 +102,19 @@ def convert(folder, src, dry):
         frac = alpha_fraction(im)
         alpha = frac > 0
         w, h = im.size
-        nw, nh = target_size(w, h, folder)
+        nw, nh = target_size(w, h)
         work = im.convert("RGBA" if alpha else "RGB")
         if (nw, nh) != (w, h):
             work = work.resize((nw, nh), Image.LANCZOS)
-    lossless = frac > LOGO_ALPHA and folder in ("bg", "cg")
+    lossless = frac > LOGO_ALPHA
     note = []
     if (nw, nh) != (w, h):
         note.append(f"{w}x{h}→{nw}x{nh}")
-    note.append("無損(含透明)" if lossless else f"品質{Q_SPRITE if (alpha and folder == 'chars') else Q_OPAQUE}" + ("，保留透明" if alpha else ""))
+    note.append("無損(含透明)" if lossless else f"品質{Q_OPAQUE}" + ("，保留透明" if alpha else ""))
     if dry:
         return "dry", dst, "，".join(note)
     kwargs = dict(lossless=True, quality=100, method=6) if lossless else dict(
-        quality=Q_SPRITE if (alpha and folder == "chars") else Q_OPAQUE, method=6, alpha_quality=100)
+        quality=Q_OPAQUE, method=6, alpha_quality=100)
     work.save(dst, "WEBP", **kwargs)
     if dst.stat().st_size >= src.stat().st_size:
         dst.unlink()
@@ -244,7 +238,7 @@ def main():
 
     imgs = collect_images()
     if not imgs:
-        print("沒有需要轉檔的圖片（assets/bg、cg、chars 裡沒有 PNG / JPG）。")
+        print("沒有需要轉檔的圖片（assets/bg、cg 裡沒有 PNG / JPG；立繪 chars 資料夾不處理）。")
     renames, before, after = {}, 0, 0
     if imgs:
         print(f"{'[預覽] ' if args.dry_run else ''}找到 {len(imgs)} 張圖片\n")
