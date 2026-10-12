@@ -33,7 +33,6 @@ button.on{background:#a6402f}
 #title-screen::before{content:"";position:absolute;inset:0;background:linear-gradient(transparent 62%,rgba(0,0,0,.55))}
 #title-brand{position:absolute;left:40px;bottom:30px;width:380px}
 #title-brand h1{font-size:56px;line-height:1.1;letter-spacing:.03em;white-space:nowrap;text-shadow:0 0 6px #000,0 3px 10px rgba(0,0,0,.7)}
-#title-brand #game-logo{display:block;max-width:380px;max-height:280px}
 #title-brand #game-subtitle{font-size:24px;letter-spacing:.2em;margin-top:6px;opacity:.9;text-shadow:0 2px 6px #000}
 .menu{position:absolute;left:430px;right:30px;bottom:34px;display:flex;justify-content:space-between}
 .menu button{background:none;border:none;font-size:24px;font-weight:700;letter-spacing:.05em;padding:8px 6px;white-space:nowrap;text-shadow:0 0 6px #000,0 2px 8px #000;transition:transform .15s}
@@ -93,4 +92,8 @@ button.on{background:#a6402f}
 #next-mark{right:60px;bottom:66px;font-size:20px;color:#bcd4ff;letter-spacing:-.15em;-webkit-text-stroke:0}
 #pic.above{bottom:250px}
 #menubar{right:50px;bottom:14px}
-#title-brand #game-logo{width:400px;max-width:none;filter:drop-shadow(0 0 3px rgba(255,255,255,.95)) drop-shadow(0 0 10px rgba(255,255,255,.7)) drop-shadow(0 3px 8px rgba(0,0,0,.55))}
+#title-brand{bottom:34px}
+#title-brand #game-logo{width:400px;max-width:none;filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))}
+#title-brand #game-subtitle:empty{display:none}
+/* logo 內「英文副標」那一行的文字中心，對齊右邊選單按鈕文字的中心 */
+#title-brand{bottom:21px}
