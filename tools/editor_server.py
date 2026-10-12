@@ -55,8 +55,10 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        if "/api/" in (args[0] if args else ""):
-            sys.stderr.write("[api] " + fmt % args + "\n")
+        # 注意：404 / 501 等錯誤回應傳進來的第一個參數是數字，要先組成字串再比對，否則會當掉、連線被中斷
+        line = fmt % args if args else str(fmt)
+        if "/api/" in line:
+            sys.stderr.write("[api] " + line + "\n")
 
     def host_ok(self):
         return self.headers.get("Host", "") in ALLOWED_HOSTS
