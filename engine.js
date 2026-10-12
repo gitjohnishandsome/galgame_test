@@ -328,7 +328,7 @@ function exec(op) {
     }
     case 'hide':
       for (const p of POS)
-        if (p === a[0] || (S.V.spr[p] && S.V.spr[p].c === a[0])) setSpr(p, null);
+        if (a[0] === 'all' || p === a[0] || (S.V.spr[p] && S.V.spr[p].c === a[0])) setSpr(p, null);
       break;
     case 'set': {
       const m = op.arg.match(/^(\w+)\s*(\+=|-=|=)\s*(.+)$/);

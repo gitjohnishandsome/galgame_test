@@ -56,7 +56,7 @@ function applyCmd(V, c) {
       break;
     }
     case 'hide':
-      for (const p of POS) if (p === a[0] || (V.spr[p] && V.spr[p].c === a[0])) V.spr[p] = null;
+      for (const p of POS) if (a[0] === 'all' || p === a[0] || (V.spr[p] && V.spr[p].c === a[0])) V.spr[p] = null;
       break;
   }
 }
@@ -111,7 +111,32 @@ function showSprite(char, expr, pos) {
   apply(`@show ${char} ${expr} ${pos}`, c =>
     (c.name === 'show' && ((c.args[2] || 'center') === pos || c.args[0] === char)) || (c.name === 'hide' && c.args[0] === pos));
 }
-const hideSprite = pos => apply(`@hide ${pos}`, c => (c.name === 'hide' && c.args[0] === pos) || (c.name === 'show' && (c.args[2] || 'center') === pos));
+// 全部消失：先把這一段裡舊的 @show / @hide 清掉（不然排在後面的 @show 會讓立繪又出現），再寫一行 @hide all
+function hideAll() {
+  mutate(() => {
+    let j = displayIndex(sel), b = j;
+    while (b > 0 && (kinds[b - 1] === 'cmd' || kinds[b - 1] === 'blank' || kinds[b - 1] === 'comment')) b--;
+    for (let k = j - 1; k >= b; k--) {
+      const c = parseCmd(lines[k]);
+      if (kinds[k] === 'cmd' && (c.name === 'show' || c.name === 'hide')) { lines.splice(k, 1); j--; }
+    }
+    lines.splice(j, 0, '@hide all');
+    sel = j + 1;
+  });
+}
+// 讓某個位置的立繪消失：在這一句前面「加」一行 @hide（不能取代前面的 @show，否則更早之前的 @show 會冒出來）
+function hideSprite(pos) {
+  mutate(() => {
+    let j = displayIndex(sel), b = j;
+    while (b > 0 && (kinds[b - 1] === 'cmd' || kinds[b - 1] === 'blank' || kinds[b - 1] === 'comment')) b--;
+    for (let k = j - 1; k >= b; k--) {
+      const c = parseCmd(lines[k]);
+      if (kinds[k] === 'cmd' && c.name === 'hide' && c.args[0] === pos) { lines.splice(k, 1); j--; }   // 去掉重複的
+    }
+    lines.splice(j, 0, `@hide ${pos}`);
+    sel = j + 1;
+  });
+}
 function deleteLine(i) { mutate(() => { lines.splice(i, 1); if (sel > i) sel--; sel = Math.max(0, Math.min(sel, lines.length - 1)); }); }
 
 // ---------- 畫面 ----------
@@ -257,6 +282,18 @@ function renderAssets() {
     });
     box.appendChild(g);
   } else if (tab === 'chars') {
+    // 讓立繪消失：左 / 中 / 右各一顆，加上「全部」。這一句畫面上沒有立繪的位置，按鈕會變灰
+    const bar = document.createElement('div'); bar.className = 'row';
+    const lb = document.createElement('span'); lb.className = 'nm'; lb.textContent = '讓立繪消失（寫入 @hide）';
+    bar.appendChild(lb);
+    POS.forEach(p => {
+      const b = document.createElement('button'); b.textContent = POS_NAME[p]; b.disabled = !V.spr[p];
+      b.title = V.spr[p] ? `讓${POS_NAME[p]}邊的立繪消失` : `${POS_NAME[p]}邊目前沒有立繪`; b.onclick = () => hideSprite(p);
+      bar.appendChild(b);
+    });
+    const all = document.createElement('button'); all.textContent = '全部'; all.disabled = !POS.some(p => V.spr[p]);
+    all.title = '讓所有立繪消失（@hide all）'; all.onclick = hideAll;
+    bar.appendChild(all); box.appendChild(bar);
     const keys = Object.keys(chars);
     let any = false;
     keys.forEach(key => {
