@@ -191,11 +191,36 @@ function setCg(n) {
   if (n) { el.cg.style.backgroundImage = `url(${DIR.cg + n})`; el.cg.style.opacity = 1; }
   else el.cg.style.opacity = 0;
 }
-function setSpr(pos, c, e) {
+// 立繪：同一位置換成另一張圖（換表情、換角色）時，用和「出現」一樣的淡入：
+// 舊圖留在原處淡出，新圖同時淡入（交叉淡化），不再瞬間跳換。instant = 讀檔 / 預覽用，直接換不做動畫
+function setSpr(pos, c, e, instant) {
   S.V.spr[pos] = c ? { c, e } : null;
   const img = el.spr[pos];
-  if (c && chars[c] && chars[c].sprites[e]) { img.src = DIR.chars + chars[c].sprites[e]; img.style.opacity = 1; }
-  else img.style.opacity = 0;
+  if (!(c && chars[c] && chars[c].sprites[e])) { img.style.opacity = 0; return; }
+  const src = DIR.chars + chars[c].sprites[e];
+  const shown = img.style.opacity === '1' && img.getAttribute('src');
+  if (shown === src) return;                                  // 同一張，不用動
+  if (instant || !shown) { img.src = src; img.style.opacity = 1; return; }   // 第一次出現：維持原本的淡入
+  // 交叉淡化：複製一份舊圖放在後面淡出，新圖從透明開始淡入（等圖片解碼完再開始，避免閃一下）
+  if (img._ghost) img._ghost.remove();
+  const ghost = img.cloneNode(false);
+  ghost.removeAttribute('id'); ghost.style.opacity = 1;
+  img.parentNode.insertBefore(ghost, img);
+  void ghost.offsetWidth;                                    // 先讓舊圖以 opacity:1 畫出來，之後改成 0 才會有淡出動畫
+  img._ghost = ghost;
+  const tok = img._tok = (img._tok || 0) + 1;
+  img.style.transition = 'none'; img.style.opacity = 0; img.src = src;
+  const go = () => {
+    if (img._tok !== tok) return;
+    void img.offsetWidth;                                    // 讓瀏覽器先套用 opacity:0，再開始淡入
+    img.style.transition = ''; img.style.opacity = 1; ghost.style.opacity = 0;
+    setTimeout(() => { if (img._ghost === ghost) img._ghost = null; ghost.remove(); }, 450);
+  };
+  // 等新圖載入完再開始淡入；用 load 事件加逾時保底（不要用 decode()：分頁在背景時它可能一直不回，立繪就永遠不出現）
+  let started = false;
+  const start = () => { if (!started) { started = true; go(); } };
+  if (img.complete && img.naturalWidth) start();
+  else { img.onload = img.onerror = start; setTimeout(start, 700); }
 }
 // 直式插圖：pos = center | left | right，opts 含 'above' 時縮放在對話框上方的區域內
 function setPic(name, pos, above) {
@@ -208,7 +233,7 @@ function setPic(name, pos, above) {
 function applyV(V) {
   setBg(V.bg); setCg(V.cg);
   setPic(V.pic && V.pic.name, V.pic && V.pic.pos, V.pic && V.pic.above);
-  for (const p of POS) setSpr(p, V.spr[p] && V.spr[p].c, V.spr[p] && V.spr[p].e);
+  for (const p of POS) setSpr(p, V.spr[p] && V.spr[p].c, V.spr[p] && V.spr[p].e, true);
   setBgm(V.bgm);
 }
 
