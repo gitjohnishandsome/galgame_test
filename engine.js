@@ -459,6 +459,37 @@ function startPlay() {
   el.box.style.display = 'none'; el.choices.style.display = 'none';
   waiting = null; skipMode = false; syncSkipBtn();
 }
+// 副標題圖（含上方細線與滴落的焦糖）內，文字那一行的垂直中心比例：用內容最多的那段列、避開右側滴落處
+function subTextCenterRatio(img) {
+  try {
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data;
+    const lim = Math.floor(c.width * 0.86), rows = [];
+    for (let y = 0; y < c.height; y++) { let n = 0; for (let xx = 0; xx < lim; xx++) if (d[(y * c.width + xx) * 4 + 3] > 40) n++; rows.push(n); }
+    // 把有內容的列合併成區段（容許 3 列以內的空隙），取內容最多的那段 = 英文文字行
+    const runs = []; let cur = null;
+    for (let y = 0; y < rows.length; y++) {
+      if (!rows[y]) continue;
+      if (cur && y - cur.end <= 3) { cur.end = y; cur.sum += rows[y]; } else { cur = { start: y, end: y, sum: rows[y] }; runs.push(cur); }
+    }
+    const best = runs.reduce((a, r) => (r.sum > a.sum ? r : a));
+    return (best.start + best.end) / 2 / c.height;
+  } catch (e) { return 0.5; }
+}
+// 讓副標題文字的中心，和右邊選單按鈕文字的中心在同一條水平線上
+function alignTitle() {
+  const sub = $('#game-sublogo');
+  if (!sub || sub.hidden || !sub.naturalHeight || el.title.classList.contains('hidden')) return;
+  const sr = stage.getBoundingClientRect(), k = sr.width / stage.offsetWidth;
+  const b = document.querySelector('.menu button').getBoundingClientRect();
+  const btnCenter = ((b.top + b.bottom) / 2 - sr.top) / k;
+  const h = sub.offsetHeight;
+  const subBottom = btnCenter - subTextCenterRatio(sub) * h + h;
+  $('#title-brand').style.bottom = Math.round(stage.offsetHeight - subBottom) + 'px';
+}
+addEventListener('resize', () => requestAnimationFrame(alignTitle));
+
 function toTitle() {
   waiting = null; skipMode = false; syncSkipBtn(); closePanel();
   el.menubar.style.display = 'none'; el.box.style.display = 'none';
@@ -467,6 +498,7 @@ function toTitle() {
   typing = null;
   setBgm(cfg.titleBgm || null);
   el.title.classList.remove('hidden');
+  requestAnimationFrame(alignTitle);
   $('#btn-continue').disabled = !LS.get('save_auto', null);
 }
 function newGame(chapterId) {
@@ -648,6 +680,8 @@ addEventListener('resize', fit); fit();
   $('#game-title').textContent = cfg.title;
   $('#game-subtitle').textContent = cfg.subtitle || '';
   if (cfg.titleBg) el.title.style.backgroundImage = `url(${DIR.bg + cfg.titleBg})`;
+  const sl = $('#game-sublogo');   // 舊版快取的 index.html 可能沒有這個元素，不要因此中斷
+  if (cfg.titleSubLogo && sl) { sl.onload = () => alignTitle(); sl.src = DIR.bg + cfg.titleSubLogo; sl.hidden = false; }
   if (cfg.titleLogo) { const lg = $('#game-logo'); lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態

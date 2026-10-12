@@ -2,7 +2,8 @@
   "title": "焦糖未乾",
   "subtitle": "",
   "titleBg": "8e44b5f9-a703-4ea7-85e1-dda62ecbdf57.png",
-  "titleLogo": "7O7W3_clean.png",
+  "titleLogo": "7O7W3.png",
+  "titleSubLogo": "IGSTD.png",
   "titleBgm": "House_of_Nightmare.mp3",
   "chapters": [
     { "id": "ch1", "title": "第一章　末班車" },

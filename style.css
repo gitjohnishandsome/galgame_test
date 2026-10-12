@@ -97,3 +97,8 @@ button.on{background:#a6402f}
 #title-brand #game-subtitle:empty{display:none}
 /* logo 內「英文副標」那一行的文字中心，對齊右邊選單按鈕文字的中心 */
 #title-brand{bottom:21px}
+
+/* 標題 logo：主標題與副標題各自一張圖，副標文字中心由 engine.js 對齊選單按鈕 */
+#title-brand{width:360px;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+#title-brand #game-logo,#title-brand #game-sublogo{display:block;width:360px;max-width:none;height:auto;filter:drop-shadow(0 3px 8px rgba(0,0,0,.45))}
+#title-brand #game-sublogo[hidden],#title-brand #game-logo[hidden]{display:none}
