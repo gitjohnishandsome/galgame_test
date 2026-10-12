@@ -73,28 +73,105 @@ function parse(text) {
   return { ops, labels };
 }
 
-function assetsOf(ch) {
+function assetOf(op) {
+  const a = (op.arg || '').split(/\s+/);
+  if (op.t === 'bg' && a[0]) return DIR.bg + a[0];
+  if ((op.t === 'cg' || op.t === 'pic') && a[0] && a[0] !== 'off') return DIR.cg + a[0];
+  if (op.t === 'bgm' && a[0] && a[0] !== 'off') return DIR.bgm + a[0];
+  if (op.t === 'se' && a[0]) return DIR.se + a[0];
+  if (op.t === 'voice' && a[0] && a[0] !== 'off') return DIR.voice + a[0];
+  if (op.t === 'show' && chars[a[0]] && chars[a[0]].sprites[a[1]]) return DIR.chars + chars[a[0]].sprites[a[1]];
+  return null;
+}
+// 章節用到的素材；from / count 可只取某一段（例如開頭的 30 個指令）
+function assetsOf(ch, from = 0, count = Infinity) {
   const list = [];
-  for (const op of ch.ops) {
-    const a = (op.arg || '').split(/\s+/);
-    if (op.t === 'bg' && a[0]) list.push(DIR.bg + a[0]);
-    else if (op.t === 'cg' && a[0] && a[0] !== 'off') list.push(DIR.cg + a[0]);
-    else if (op.t === 'pic' && a[0] && a[0] !== 'off') list.push(DIR.cg + a[0]);
-    else if (op.t === 'bgm' && a[0] && a[0] !== 'off') list.push(DIR.bgm + a[0]);
-    else if (op.t === 'se' && a[0]) list.push(DIR.se + a[0]);
-    else if (op.t === 'voice' && a[0] && a[0] !== 'off') list.push(DIR.voice + a[0]);
-    else if (op.t === 'show' && chars[a[0]] && chars[a[0]].sprites[a[1]]) list.push(DIR.chars + chars[a[0]].sprites[a[1]]);
-  }
+  for (const op of ch.ops.slice(from, from + count)) { const u = assetOf(op); if (u) list.push(u); }
   return [...new Set(list)];
 }
+// 存檔 / 場景目前畫面上的素材
+function assetsOfV(V) {
+  const l = [];
+  if (V.bg) l.push(DIR.bg + V.bg);
+  if (V.cg) l.push(DIR.cg + V.cg);
+  if (V.pic) l.push(DIR.cg + V.pic.name);
+  if (V.bgm) l.push(DIR.bgm + V.bgm);
+  for (const p of POS) { const sp = V.spr && V.spr[p]; if (sp && chars[sp.c] && chars[sp.c].sprites[sp.e]) l.push(DIR.chars + chars[sp.c].sprites[sp.e]); }
+  return l;
+}
+
+// ---------- 素材載入（含進度）----------
+// 每個檔案只下載一次（結果進瀏覽器快取，之後 <img> / <audio> 直接用）；失敗不會卡住遊戲
+const assetJobs = new Map();
+function loadAsset(url) {
+  let j = assetJobs.get(url);
+  if (j) return j;
+  j = { loaded: 0, total: 0, done: false };
+  j.promise = (async () => {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status);
+      j.total = Number(r.headers.get('content-length')) || 0;
+      if (r.body && r.body.getReader) {
+        const rd = r.body.getReader();
+        for (;;) { const { done, value } = await rd.read(); if (done) break; j.loaded += value.length; }
+      } else await r.arrayBuffer();
+    } catch (e) { console.warn('素材載入失敗：', url); }
+    j.done = true;
+  })();
+  assetJobs.set(url, j);
+  return j;
+}
+// 整體進度：已知各檔大小時按「位元組」計算（大檔案佔比較多，進度才平順）；還不知道大小時退回按檔案數
+function overallProgress(jobs) {
+  if (!jobs.length) return 1;
+  const known = jobs.every(j => j.done || j.total);
+  if (known) {
+    let got = 0, all = 0;
+    for (const j of jobs) { const t = Math.max(j.total, j.loaded, 1); all += t; got += j.done ? t : Math.min(j.loaded, t * 0.99); }
+    return got / all;
+  }
+  return jobs.reduce((n, j) => n + (j.done ? 1 : 0), 0) / jobs.length;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const loadingEl = $('#loading');
+function showLoading(label) {
+  if (!loadingEl) return;
+  $('#loading-label').textContent = label || '載入中';
+  $('#loading-bar').style.width = '0%'; $('#loading-pct').textContent = '0%';
+  loadingEl.style.display = 'flex'; loadingEl.style.opacity = 1;
+}
+function setLoading(f) {
+  if (!loadingEl) return;
+  const pct = Math.round(Math.max(0, Math.min(1, f)) * 100);
+  $('#loading-bar').style.width = pct + '%'; $('#loading-pct').textContent = pct + '%';
+}
+async function hideLoading() {
+  if (!loadingEl) return;
+  loadingEl.style.opacity = 0;
+  await sleep(350);
+  loadingEl.style.display = 'none';
+}
+// 等這批素材載完。很快載完就不顯示進度條；超過 250ms 才跳出（immediate 則一開始就顯示）。最多等 25 秒，不會卡死。
+async function withLoading(urls, label, immediate) {
+  const jobs = [...new Set(urls)].map(loadAsset);
+  if (!immediate && jobs.every(j => j.done)) return;
+  let shown = !!immediate;
+  if (shown) showLoading(label);
+  const t = shown ? null : setTimeout(() => { shown = true; showLoading(label); }, 250);
+  const tick = setInterval(() => { if (shown) setLoading(overallProgress(jobs)); }, 80);
+  await Promise.race([Promise.all(jobs.map(j => j.promise)), sleep(25000)]);
+  clearTimeout(t); clearInterval(tick);
+  if (shown) { setLoading(1); await sleep(180); if (!immediate) await hideLoading(); }
+}
+
+// 背景預載整章素材（不阻擋遊戲）
 const preloaded = new Set();
 async function preload(id) {
   if (!id || preloaded.has(id)) return;
   preloaded.add(id);
-  try {
-    const ch = await loadChapter(id);
-    assetsOf(ch).forEach(u => fetch(u).catch(() => {}));
-  } catch (e) {}
+  try { assetsOf(await loadChapter(id)).forEach(loadAsset); } catch (e) {}
 }
 const chapterIds = () => cfg.chapters.map(c => c.id);
 const nextChapterId = id => chapterIds()[chapterIds().indexOf(id) + 1] || null;
@@ -295,7 +372,9 @@ async function enterChapter(id, label) {
     S.chapter = id; S.idx = label && label in cur.labels ? cur.labels[label] : 0;
     const un = LS.get('unlocked', []);
     if (!un.includes(id)) { un.push(id); LS.set('unlocked', un); }
-    preload(nextChapterId(id));
+    // 先等「開頭 30 個指令」用到的素材；其餘在背景載入，下一章也提前預載
+    await withLoading(assetsOf(cur, S.idx, 30), chapterTitle(id));
+    preload(id); preload(nextChapterId(id));
   } catch (e) { busy = false; alert('載入章節失敗：' + e.message + '\n請用本機伺服器開啟（見 start.bat）。'); return; }
   busy = false;
   run();
@@ -444,8 +523,9 @@ async function loadSave(slot) {
   if (!d) return;
   busy = true;
   try { cur = await loadChapter(d.chapter); } catch (e) { busy = false; alert('載入失敗：' + e.message); return; }
-  busy = false;
   S = { chapter: d.chapter, idx: d.idx, flags: clone(d.flags), V: blankV(), history: clone(d.history || []) };
+  await withLoading([...assetsOfV(d.V), ...assetsOf(cur, d.idx, 30)], '讀取存檔');
+  busy = false;
   closePanel(); startPlay();
   applyV(clone(d.V));
   preload(nextChapterId(d.chapter));
@@ -717,7 +797,12 @@ addEventListener('resize', fit); fit();
   if (cfg.titleLogo) { const lg = $('#game-logo'); lg.onload = fitTitleLogos; lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態
+  // 首次載入：先等標題畫面的圖（有進度條），標題音樂與第一章在背景載入
+  $('#loading-title').textContent = cfg.title;
+  await withLoading([cfg.titleBg, cfg.titleLogo, cfg.titleSubLogo].filter(Boolean).map(n => DIR.bg + n), '載入中', true);
   toTitle();
+  await hideLoading();
+  if (cfg.titleBgm) loadAsset(DIR.bgm + cfg.titleBgm);
   preload(chapterIds()[0]);
 })();
 })();
