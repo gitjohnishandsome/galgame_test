@@ -563,6 +563,29 @@ function settingsPanel(body) {
   body.append(g1, g2);
 }
 
+function openHistory() {
+  openPanel('歷史', body => {
+    if (!S || !S.history.length) return panelEmpty(body, '尚無紀錄');
+    S.history.forEach(h => {
+      const d = document.createElement('div'); d.className = 'hist-line';
+      if (h.name) { const n = document.createElement('b'); n.textContent = h.name; d.appendChild(n); }
+      const t = document.createElement('span'); t.textContent = h.text; d.appendChild(t);
+      body.appendChild(d);
+    });
+    body.scrollTop = body.scrollHeight;
+  });
+}
+const panelIsHistory = () => !el.panel.classList.contains('hidden') && el.ptitle.textContent === '歷史';
+// 滑鼠滾輪：遊戲中往上滾 = 開歷史；在歷史底部再往下滾 = 關閉
+document.addEventListener('wheel', e => {
+  if (!el.panel.classList.contains('hidden')) {
+    if (panelIsHistory() && e.deltaY > 0 && el.pbody.scrollTop + el.pbody.clientHeight >= el.pbody.scrollHeight - 2) closePanel();
+    return;
+  }
+  if (e.deltaY < 0 && el.title.classList.contains('hidden') && waiting !== 'banner' && !busy) openHistory();
+}, { passive: true });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !el.panel.classList.contains('hidden')) closePanel(); });
+
 function panelEmpty(body, msg) { body.innerHTML = `<p class="empty">${msg}</p>`; }
 
 document.addEventListener('click', e => {
@@ -573,16 +596,7 @@ document.addEventListener('click', e => {
     case 'continue': loadSave('auto'); break;
     case 'save': openPanel('存檔', body => slotList(body, 'save')); break;
     case 'load': openPanel('讀檔', body => slotList(body, 'load')); break;
-    case 'history': openPanel('歷史', body => {
-      if (!S || !S.history.length) return panelEmpty(body, '尚無紀錄');
-      S.history.forEach(h => {
-        const d = document.createElement('div'); d.className = 'hist-line';
-        if (h.name) { const n = document.createElement('b'); n.textContent = h.name; d.appendChild(n); }
-        const t = document.createElement('span'); t.textContent = h.text; d.appendChild(t);
-        body.appendChild(d);
-      });
-      body.scrollTop = body.scrollHeight;
-    }); break;
+    case 'history': openHistory(); break;
     case 'skip': skipMode = !skipMode; syncSkipBtn(); break;
     case 'mute': setMute(!muted); break;
     case 'title': toTitle(); break;
