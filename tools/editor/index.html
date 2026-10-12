@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>場景編輯器</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header>
+  <strong>場景編輯器</strong>
+  <label>章節 <select id="chapter"></select></label>
+  <button id="btn-save" title="Ctrl+S">儲存</button>
+  <button id="btn-undo" title="Ctrl+Z">復原</button>
+  <span id="status"></span>
+  <span class="grow"></span>
+  <span class="hint">點左邊的一行 → 中間預覽那一句的畫面 → 點右邊的素材套用到這一句</span>
+</header>
+
+<main>
+  <section id="col-script">
+    <div class="col-title">劇情（點選一行）</div>
+    <div id="lines"></div>
+  </section>
+
+  <section id="col-preview">
+    <div id="pv-wrap"><iframe id="pv" title="預覽"></iframe></div>
+    <div id="state">
+      <div class="state-row"><b>目前這一句的畫面</b><span id="pv-line"></span></div>
+      <div id="chips"></div>
+      <div class="state-row">
+        <b>立繪放置位置</b>
+        <label><input type="radio" name="pos" value="left"> 左</label>
+        <label><input type="radio" name="pos" value="center" checked> 中</label>
+        <label><input type="radio" name="pos" value="right"> 右</label>
+        <span class="muted">（點右邊立繪時套用到這個位置）</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="col-assets">
+    <div id="tabs"></div>
+    <div id="assets"></div>
+  </section>
+</main>
+
+<script src="editor.js"></script>
+</body>
+</html>

@@ -11,6 +11,8 @@ const LS = {
 const clone = o => JSON.parse(JSON.stringify(o));
 const DIR = { bg: 'assets/bg/', cg: 'assets/cg/', chars: 'assets/chars/', bgm: 'assets/bgm/', se: 'assets/se/', voice: 'assets/voice/' };
 const SLOTS = 6;
+// 場景編輯器（tools/editor）會把遊戲嵌成預覽畫面並傳入要顯示的狀態，這個模式不播放任何聲音
+const EDITOR = new URLSearchParams(location.search).has('editor');
 const POS = ['left', 'center', 'right'];
 
 let cfg, chars;
@@ -250,6 +252,7 @@ function applyVolumes() {
   if (voiceGain) voiceGain.gain.value = voiceVol(); else voiceEl.volume = voiceVol();
 }
 function playVoice(n) {
+  if (EDITOR) return;
   voiceEl.pause(); if (!n || n === 'off') return;
   voiceEl.src = DIR.voice + n;
   if (voiceGain) voiceGain.gain.value = voiceVol(); else voiceEl.volume = voiceVol();
@@ -257,6 +260,7 @@ function playVoice(n) {
 }
 let wantBgm = null;
 function setBgm(n) {
+  if (EDITOR) return;
   wantBgm = n;
   if (S) S.V.bgm = n;
   const src = n ? new URL(DIR.bgm + n, location.href).href : null;
@@ -278,6 +282,7 @@ function setBgm(n) {
   }, 40);
 }
 function playSe(n) {
+  if (EDITOR) return;
   const a = new Audio(DIR.se + n);
   if (actx && seGain) { try { actx.createMediaElementSource(a).connect(seGain); seGain.gain.value = seVol(); } catch (e) { a.volume = seVol(); } }
   else a.volume = seVol();
@@ -779,6 +784,30 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
+// ---------- 場景編輯器預覽 ----------
+// 編輯器傳來 {type:'render', V, say:{who,text} | choice:[文字…]}，這裡只負責把畫面畫出來
+function previewRender(m) {
+  S.V = blankV();
+  applyV(m.V || blankV());
+  el.choices.style.display = 'none'; el.box.style.display = 'none'; el.mark.style.display = 'none';
+  if (m.choice) {
+    el.choices.innerHTML = '';
+    m.choice.forEach(t => { const b = document.createElement('button'); b.textContent = t; el.choices.appendChild(b); });
+    el.choices.style.display = 'flex';
+  } else if (m.say) {
+    const c = m.say.who ? chars[m.say.who] : null;
+    el.box.style.display = 'block';
+    el.name.style.display = c ? 'block' : 'none';
+    if (c) { el.name.textContent = c.name; el.name.style.color = c.color || '#fff'; }
+    el.text.textContent = m.say.text;
+    el.mark.style.display = 'block';
+  }
+}
+if (EDITOR) addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== 'render' || !S) return;
+  previewRender(e.data);
+});
+
 (async function init() {
   try {
     cfg = await getJSON('chapters/index.json');
@@ -797,6 +826,13 @@ addEventListener('resize', fit); fit();
   if (cfg.titleLogo) { const lg = $('#game-logo'); lg.onload = fitTitleLogos; lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態
+  if (EDITOR) {   // 編輯器預覽：不走標題畫面與載入流程
+    document.body.classList.add('editor');
+    el.title.classList.add('hidden');
+    if (loadingEl) loadingEl.style.display = 'none';
+    parent.postMessage({ type: 'ready' }, location.origin);
+    return;
+  }
   // 首次載入：先等標題畫面的圖（有進度條），標題音樂與第一章在背景載入
   $('#loading-title').textContent = cfg.title;
   await withLoading([cfg.titleBg, cfg.titleLogo, cfg.titleSubLogo].filter(Boolean).map(n => DIR.bg + n), '載入中', true);

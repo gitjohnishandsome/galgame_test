@@ -120,3 +120,6 @@ button.on{background:#a6402f}
 #loading-track{width:440px;height:10px;border-radius:6px;background:rgba(255,255,255,.16);overflow:hidden}
 #loading-bar{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,#7aa7ff,#bcd4ff);transition:width .12s linear}
 #loading-pct{font-size:20px;opacity:.75;font-variant-numeric:tabular-nums}
+
+/* 場景編輯器預覽模式：隱藏玩家用的按鈕 */
+body.editor #menubar,body.editor #btn-mute,body.editor #loading{display:none!important}

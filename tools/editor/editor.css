@@ -1,0 +1,69 @@
+:root{--bg:#10131c;--panel:#171c29;--line:#2a3247;--text:#e8ecf5;--muted:#8d97ad;--accent:#7aa7ff;--warn:#ffb86b;--ok:#6fd6a0}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Noto Sans TC","Microsoft JhengHei",sans-serif}
+header{display:flex;align-items:center;gap:12px;height:48px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+header .grow{flex:1}
+header .hint,.muted{color:var(--muted);font-size:12px}
+select,button{font:inherit;color:var(--text);background:#222a3d;border:1px solid var(--line);border-radius:6px;padding:4px 12px}
+button{cursor:pointer}
+button:hover{background:#2d3852}
+button:disabled{opacity:.4;cursor:default}
+#btn-save.dirty{background:#a6402f;border-color:#d4614c}
+#status{font-size:12px;color:var(--muted)}
+#status.ok{color:var(--ok)}
+#status.err{color:#ff7b7b}
+main{display:grid;grid-template-columns:minmax(260px,24%) minmax(420px,1fr) minmax(300px,30%);height:calc(100% - 48px)}
+section{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+section:last-child{border-right:none}
+.col-title{padding:8px 12px;font-weight:700;border-bottom:1px solid var(--line);background:var(--panel)}
+
+/* 劇情列表 */
+#lines{flex:1;overflow:auto;padding:6px 0;font-size:13px}
+.ln{display:flex;gap:8px;align-items:flex-start;padding:2px 10px 2px 8px;cursor:pointer;border-left:3px solid transparent}
+.ln:hover{background:#1c2335}
+.ln .no{flex:none;width:28px;text-align:right;color:#5a6580;font-variant-numeric:tabular-nums;font-size:11px;padding-top:2px}
+.ln .body{flex:1;min-width:0;word-break:break-all}
+.ln.sel{background:#243253;border-left-color:var(--accent)}
+.ln.disp{border-left-color:var(--ok)}
+.ln.sel.disp{border-left-color:var(--accent)}
+.ln.blank{height:8px;padding:0;cursor:default}
+.ln.cmd .body{font-family:Consolas,monospace;font-size:12px;color:#9fc3ff}
+.ln.cmd .del{opacity:0}
+.ln.cmd:hover .del{opacity:1}
+.ln.comment .body{color:#667089;font-style:italic}
+.ln.label .body{color:var(--warn);font-weight:700}
+.ln.choice .body{color:#d9a6ff}
+.ln .nm{color:#ffd6a5;margin-right:6px;font-weight:700}
+.del{flex:none;padding:0 6px;border-radius:4px;background:none;border:none;color:#ff8a8a}
+
+/* 預覽 */
+#col-preview{overflow:auto}
+#pv-wrap{position:relative;width:100%;background:#000;border-bottom:1px solid var(--line);overflow:hidden}
+#pv{position:absolute;left:0;top:0;width:1216px;height:832px;border:0;transform-origin:0 0;pointer-events:none}
+#state{padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.state-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#222a3d;border:1px solid var(--line);border-radius:16px;padding:2px 4px 2px 10px;font-size:12px}
+.chip .k{color:var(--muted)}
+.chip button{padding:0 7px;border-radius:12px;font-size:12px;line-height:20px}
+.chip.empty{opacity:.45;padding-right:10px}
+
+/* 素材 */
+#tabs{display:flex;gap:4px;padding:8px 8px 0;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#tabs button{border-radius:6px 6px 0 0;border-bottom:none;background:#1a2133}
+#tabs button.on{background:var(--bg);color:var(--accent);border-color:var(--accent)}
+#assets{flex:1;overflow:auto;padding:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+.card.cur{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok)}
+.card .th{aspect-ratio:16/10;background:#0b0e16 center/contain no-repeat;cursor:pointer}
+.card .th.tall{aspect-ratio:3/4}
+.card .cap{padding:3px 6px;font-size:11px;color:var(--muted);word-break:break-all}
+.card .acts{display:flex;gap:4px;padding:0 6px 6px}
+.card .acts button{flex:1;padding:2px 4px;font-size:12px}
+.group-title{margin:12px 0 6px;font-weight:700;color:var(--accent)}
+.row{display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:6px}
+.row.cur{border-color:var(--ok)}
+.row .nm{flex:1;min-width:0;word-break:break-all;font-size:12px}
+.row button{padding:2px 8px;font-size:12px}
+.empty{color:var(--muted);padding:20px 4px}

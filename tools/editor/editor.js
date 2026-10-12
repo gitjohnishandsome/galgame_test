@@ -1,0 +1,363 @@
+// 場景編輯器：點一行劇情 → 預覽那一句的畫面 → 點素材套用，自動改寫劇情檔的 @ 指令
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const POS = ['left', 'center', 'right'];
+const POS_NAME = { left: '左', center: '中', right: '右' };
+const DIRS = { bg: '/assets/bg/', cg: '/assets/cg/', chars: '/assets/chars/', bgm: '/assets/bgm/', se: '/assets/se/' };
+const url = (dir, name) => DIRS[dir] + name.split('/').map(encodeURIComponent).join('/');
+
+let cfg, chars = {}, assets = {};
+let chapterId = null, lines = [], trailingNL = true, savedText = '';
+let sel = 0, tab = 'bg', pvReady = false;
+const undoStack = [];
+let kinds = [];
+
+// ---------- 解析 ----------
+function classify() {
+  kinds = []; let inChoice = false;
+  for (const l of lines) {
+    const t = l.trim(); let k;
+    if (!t) k = 'blank';
+    else if (t[0] === '#') k = 'comment';
+    else if (t[0] === '*') k = 'label';
+    else if (/^@choice\b/.test(t)) { k = 'choiceStart'; inChoice = true; }
+    else if (/^@endchoice\b/.test(t)) { k = 'choiceEnd'; inChoice = false; }
+    else if (inChoice && t[0] === '-') k = 'opt';
+    else if (t[0] === '@') k = 'cmd';
+    else k = 'say';
+    kinds.push(k);
+  }
+}
+function parseCmd(line) {
+  const m = line.trim().match(/^@(\w+)\s*(.*)$/);
+  return m ? { name: m[1], args: m[2].split(/\s+/).filter(Boolean) } : { name: '', args: [] };
+}
+function sayInfo(line) {
+  const d = line.trim().match(/^([^：:]{1,12})[：:]\s*(.*)$/);
+  if (d) {
+    const key = Object.keys(chars).find(k => k === d[1] || chars[k].name === d[1]);
+    if (key) return { who: key, text: d[2] };
+  }
+  return { who: null, text: line.trim() };
+}
+const blankV = () => ({ bg: null, cg: null, pic: null, bgm: null, spr: { left: null, center: null, right: null } });
+function applyCmd(V, c) {
+  const a = c.args;
+  switch (c.name) {
+    case 'bg': V.bg = a[0] || null; break;
+    case 'cg': V.cg = !a[0] || a[0] === 'off' ? null : a[0]; break;
+    case 'pic': V.pic = !a[0] || a[0] === 'off' ? null : { name: a[0], pos: a[1] && a[1] !== 'above' ? a[1] : 'center', above: a.includes('above') }; break;
+    case 'bgm': V.bgm = !a[0] || a[0] === 'off' ? null : a[0]; break;
+    case 'show': {
+      const pos = a[2] || 'center';
+      for (const p of POS) if (p !== pos && V.spr[p] && V.spr[p].c === a[0]) V.spr[p] = null;
+      V.spr[pos] = { c: a[0], e: a[1] };
+      break;
+    }
+    case 'hide':
+      for (const p of POS) if (p === a[0] || (V.spr[p] && V.spr[p].c === a[0])) V.spr[p] = null;
+      break;
+  }
+}
+
+// 目前選取的行對應的「顯示行」：玩家真正會看到畫面的那句台詞或選項
+function displayIndex(i) {
+  if (kinds[i] === 'opt' || kinds[i] === 'choiceEnd') {
+    for (let k = i; k >= 0; k--) if (kinds[k] === 'choiceStart') return k;
+  }
+  for (let k = i; k < lines.length; k++) if (kinds[k] === 'say' || kinds[k] === 'choiceStart') return k;
+  return lines.length;
+}
+function stateAt(j) {
+  const V = blankV();
+  for (let i = 0; i < j && i < lines.length; i++) if (kinds[i] === 'cmd') applyCmd(V, parseCmd(lines[i]));
+  return V;
+}
+
+// ---------- 修改劇情 ----------
+function mutate(fn) {
+  undoStack.push({ lines: lines.slice(), sel });
+  if (undoStack.length > 200) undoStack.shift();
+  fn();
+  classify(); renderAll();
+}
+function undo() {
+  const u = undoStack.pop();
+  if (!u) return;
+  lines = u.lines; sel = Math.min(u.sel, lines.length - 1);
+  classify(); renderAll();
+}
+// 套用一條指令：往上找「上一句台詞 / 標籤 / 選項」之後、顯示行之前的那一段（只會有指令、空行、註解），
+// 裡面有同類的指令就取代，沒有就插在顯示行前面
+function upsertCmd(text, matcher) {
+  const j = displayIndex(sel);
+  let b = j;
+  while (b > 0 && (kinds[b - 1] === 'cmd' || kinds[b - 1] === 'blank' || kinds[b - 1] === 'comment')) b--;
+  for (let k = b; k < j; k++) {
+    if (matcher(parseCmd(lines[k]))) { lines[k] = text; return; }
+  }
+  lines.splice(j, 0, text);
+  sel = j + 1;     // 顯示行往後挪了一格，選取跟著走
+}
+const apply = (text, matcher) => mutate(() => upsertCmd(text, matcher));
+
+const setBg = n => apply(`@bg ${n}`, c => c.name === 'bg');
+const setCg = n => apply(`@cg ${n}`, c => c.name === 'cg');
+const setPic = (n, pos) => apply(`@pic ${n}${pos && pos !== 'center' ? ' ' + pos : ''}`, c => c.name === 'pic');
+const setBgm = n => apply(`@bgm ${n}`, c => c.name === 'bgm');
+const addSe = n => mutate(() => { const j = displayIndex(sel); lines.splice(j, 0, `@se ${n}`); sel = j + 1; });
+function showSprite(char, expr, pos) {
+  apply(`@show ${char} ${expr} ${pos}`, c =>
+    (c.name === 'show' && ((c.args[2] || 'center') === pos || c.args[0] === char)) || (c.name === 'hide' && c.args[0] === pos));
+}
+const hideSprite = pos => apply(`@hide ${pos}`, c => (c.name === 'hide' && c.args[0] === pos) || (c.name === 'show' && (c.args[2] || 'center') === pos));
+function deleteLine(i) { mutate(() => { lines.splice(i, 1); if (sel > i) sel--; sel = Math.max(0, Math.min(sel, lines.length - 1)); }); }
+
+// ---------- 畫面 ----------
+function curPos() { return (document.querySelector('input[name=pos]:checked') || {}).value || 'center'; }
+const isDirty = () => joinText() !== savedText;
+const joinText = () => lines.join('\n') + (trailingNL ? '\n' : '');
+
+function renderAll() {
+  renderLines(); renderChips(); renderAssets(); sendPreview(); updateDirty();
+}
+function updateDirty() {
+  $('#btn-save').classList.toggle('dirty', isDirty());
+  $('#btn-save').textContent = isDirty() ? '儲存（有未存的修改）' : '儲存';
+  $('#btn-undo').disabled = !undoStack.length;
+}
+
+function renderLines() {
+  const box = $('#lines'), keepTop = box.scrollTop;
+  box.textContent = '';
+  const j = displayIndex(sel);
+  lines.forEach((l, i) => {
+    const k = kinds[i];
+    const row = document.createElement('div');
+    row.className = 'ln ' + (k === 'choiceStart' || k === 'choiceEnd' || k === 'opt' ? 'choice' : k) + (i === sel ? ' sel' : '') + (i === j ? ' disp' : '');
+    if (k === 'blank') { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
+    const no = document.createElement('span'); no.className = 'no'; no.textContent = i + 1;
+    const body = document.createElement('span'); body.className = 'body';
+    if (k === 'say') {
+      const s = sayInfo(l);
+      if (s.who) { const n = document.createElement('span'); n.className = 'nm'; n.textContent = chars[s.who].name; body.appendChild(n); }
+      body.appendChild(document.createTextNode(s.text));
+    } else body.textContent = l.trim();
+    row.append(no, body);
+    if (k === 'cmd') {
+      const d = document.createElement('button'); d.className = 'del'; d.textContent = '✕'; d.title = '刪除這行指令';
+      d.onclick = e => { e.stopPropagation(); deleteLine(i); };
+      row.appendChild(d);
+    }
+    row.onclick = () => { sel = i; renderAll(); };
+    box.appendChild(row);
+  });
+  box.scrollTop = keepTop;
+  const el = box.querySelector('.ln.sel') || box.querySelector('.ln.disp');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+function chip(label, value, actions) {
+  const c = document.createElement('span'); c.className = 'chip' + (value ? '' : ' empty');
+  const k = document.createElement('span'); k.className = 'k'; k.textContent = label;
+  c.append(k, document.createTextNode(value || '（無）'));
+  (value ? actions || [] : []).forEach(([t, title, fn]) => { const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; c.appendChild(b); });
+  return c;
+}
+function renderChips() {
+  const j = displayIndex(sel), V = stateAt(j), box = $('#chips');
+  box.textContent = '';
+  $('#pv-line').textContent = j < lines.length ? `（第 ${j + 1} 行）` : '（已到檔案結尾，沒有台詞）';
+  box.appendChild(chip('背景', V.bg));
+  box.appendChild(chip('CG', V.cg, [['✕', '收起 CG', () => apply('@cg off', c => c.name === 'cg')]]));
+  box.appendChild(chip('直式插圖', V.pic && `${V.pic.name}（${POS_NAME[V.pic.pos] || V.pic.pos}）`, [['✕', '收起插圖', () => apply('@pic off', c => c.name === 'pic')]]));
+  box.appendChild(chip('音樂', V.bgm, [['✕', '停止音樂', () => apply('@bgm off', c => c.name === 'bgm')]]));
+  for (const p of POS) {
+    const sp = V.spr[p];
+    const idx = POS.indexOf(p);
+    const acts = sp ? [
+      ...(idx > 0 ? [['◀', '往左移', () => showSprite(sp.c, sp.e, POS[idx - 1])]] : []),
+      ...(idx < 2 ? [['▶', '往右移', () => showSprite(sp.c, sp.e, POS[idx + 1])]] : []),
+      ['✕', '移除這個立繪', () => hideSprite(p)]] : [];
+    box.appendChild(chip('立繪·' + POS_NAME[p], sp && `${(chars[sp.c] || {}).name || sp.c}／${sp.e}`, acts));
+  }
+}
+
+// ---------- 預覽 ----------
+function fitPreview() {
+  const wrap = $('#pv-wrap'), k = wrap.clientWidth / 1216;
+  $('#pv').style.transform = `scale(${k})`;
+  wrap.style.height = Math.round(832 * k) + 'px';
+}
+function sendPreview() {
+  if (!pvReady) return;
+  const j = displayIndex(sel), V = stateAt(j), msg = { type: 'render', V };
+  if (j < lines.length && kinds[j] === 'choiceStart') {
+    msg.choice = [];
+    for (let k = j + 1; k < lines.length && kinds[k] !== 'choiceEnd'; k++) {
+      if (kinds[k] === 'opt') msg.choice.push(lines[k].trim().replace(/^-\s*/, '').replace(/\s*->.*$/, ''));
+    }
+  } else if (j < lines.length) msg.say = sayInfo(lines[j]);
+  $('#pv').contentWindow.postMessage(msg, location.origin);
+}
+addEventListener('message', e => {
+  if (e.origin === location.origin && e.data && e.data.type === 'ready') { pvReady = true; fitPreview(); sendPreview(); }
+});
+addEventListener('resize', fitPreview);
+
+// ---------- 素材面板 ----------
+const TABS = [['bg', '背景'], ['cg', 'CG／插圖'], ['chars', '立繪'], ['bgm', '音樂'], ['se', '音效']];
+let player = null, playingName = null;
+function stopPlayer() { if (player) { player.pause(); player = null; playingName = null; } }
+function previewAudio(dir, name, btn) {
+  const same = playingName === dir + name;
+  stopPlayer();
+  document.querySelectorAll('.row button.play').forEach(b => { b.textContent = '▶'; });
+  if (same) return;
+  player = new Audio(url(dir, name)); player.volume = 0.6; playingName = dir + name;
+  player.play().catch(() => {});
+  btn.textContent = '■';
+  player.onended = () => { btn.textContent = '▶'; playingName = null; };
+}
+function imgCard(dir, name, size, buttons, curName, tall) {
+  const c = document.createElement('div'); c.className = 'card' + (curName === name ? ' cur' : '');
+  const th = document.createElement('div'); th.className = 'th' + (tall ? ' tall' : '');
+  th.style.backgroundImage = `url("${url(dir, name)}")`;
+  th.title = `${name}（${(size / 1024).toFixed(0)} KB）`;
+  th.onclick = buttons[0][1];
+  const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = name;
+  c.append(th, cap);
+  if (buttons.length > 1 || buttons[0][0]) {
+    const acts = document.createElement('div'); acts.className = 'acts';
+    buttons.forEach(([t, fn]) => { if (!t) return; const b = document.createElement('button'); b.textContent = t; b.onclick = fn; acts.appendChild(b); });
+    c.appendChild(acts);
+  }
+  return c;
+}
+function renderTabs() {
+  const box = $('#tabs'); box.textContent = '';
+  TABS.forEach(([k, label]) => {
+    const b = document.createElement('button'); b.textContent = label; b.className = tab === k ? 'on' : '';
+    b.onclick = () => { tab = k; stopPlayer(); renderTabs(); renderAssets(); };
+    box.appendChild(b);
+  });
+}
+function renderAssets() {
+  const box = $('#assets'), top = box.scrollTop; box.textContent = '';
+  const V = stateAt(displayIndex(sel));
+  const isImg = n => /\.(webp|png|jpe?g|svg|gif)$/i.test(n);
+  if (tab === 'bg' || tab === 'cg') {
+    const list = (assets[tab] || []).filter(a => isImg(a.name));
+    if (!list.length) { box.innerHTML = '<div class="empty">這個資料夾還沒有圖片</div>'; return; }
+    const g = document.createElement('div'); g.className = 'grid';
+    list.forEach(a => {
+      if (tab === 'bg') g.appendChild(imgCard('bg', a.name, a.size, [['', () => setBg(a.name)]], V.bg));
+      else g.appendChild(imgCard('cg', a.name, a.size, [['', () => setCg(a.name)], ['當 CG', () => setCg(a.name)], ['直式插圖', () => setPic(a.name, 'center')]], V.cg || (V.pic && V.pic.name)));
+    });
+    box.appendChild(g);
+  } else if (tab === 'chars') {
+    const keys = Object.keys(chars);
+    let any = false;
+    keys.forEach(key => {
+      const sp = chars[key].sprites || {}, names = Object.keys(sp);
+      if (!names.length) return;
+      any = true;
+      const t = document.createElement('div'); t.className = 'group-title'; t.textContent = `${chars[key].name}（${key}）`;
+      const g = document.createElement('div'); g.className = 'grid';
+      names.forEach(e => {
+        const size = ((assets.chars || []).find(a => a.name === sp[e]) || {}).size || 0;
+        const cur = POS.some(p => V.spr[p] && V.spr[p].c === key && V.spr[p].e === e) ? sp[e] : null;
+        const c = imgCard('chars', sp[e], size, [['', () => showSprite(key, e, curPos())], [`放${POS_NAME[curPos()]}`, () => showSprite(key, e, curPos())]], cur, true);
+        c.querySelector('.cap').textContent = `${e}（${sp[e]}）`;
+        g.appendChild(c);
+      });
+      box.append(t, g);
+    });
+    if (!any) box.innerHTML = '<div class="empty">chars.json 裡還沒有任何角色的立繪。<br>在 chars.json 的 sprites 加上表情與檔名，這裡就會出現。</div>';
+  } else {
+    const dir = tab, list = assets[dir] || [];
+    if (dir === 'bgm') {
+      const off = document.createElement('div'); off.className = 'row';
+      off.innerHTML = '<span class="nm">停止音樂（@bgm off）</span>';
+      const b = document.createElement('button'); b.textContent = '套用'; b.onclick = () => apply('@bgm off', c => c.name === 'bgm');
+      off.appendChild(b); box.appendChild(off);
+    }
+    if (!list.length) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '這個資料夾還沒有檔案'; box.appendChild(d); }
+    list.forEach(a => {
+      const r = document.createElement('div'); r.className = 'row' + (dir === 'bgm' && V.bgm === a.name ? ' cur' : '');
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = `${a.name}（${(a.size / 1024 / 1024).toFixed(2)} MB）`;
+      const p = document.createElement('button'); p.className = 'play'; p.textContent = '▶'; p.title = '試聽'; p.onclick = () => previewAudio(dir, a.name, p);
+      const ap = document.createElement('button'); ap.textContent = '套用'; ap.onclick = () => (dir === 'bgm' ? setBgm(a.name) : addSe(a.name));
+      r.append(nm, p, ap); box.appendChild(r);
+    });
+  }
+  box.scrollTop = top;
+}
+
+// ---------- 載入 / 儲存 ----------
+function status(msg, cls) { const s = $('#status'); s.textContent = msg; s.className = cls || ''; }
+async function api(path, opt) {
+  const r = await fetch(path, opt);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || r.status);
+  return d;
+}
+async function openChapter(id) {
+  const d = await api('/api/chapter/' + encodeURIComponent(id));
+  chapterId = id;
+  const text = d.text.replace(/\r\n/g, '\n');
+  trailingNL = text.endsWith('\n');
+  lines = (trailingNL ? text.slice(0, -1) : text).split('\n');
+  savedText = joinText();
+  undoStack.length = 0; classify();
+  sel = Math.max(0, lines.findIndex((_, i) => kinds[i] === 'say'));
+  status('已載入 ' + id + '.txt');
+  renderAll();
+}
+async function save() {
+  if (!chapterId) return;
+  try {
+    const text = joinText();
+    await api('/api/chapter/' + encodeURIComponent(chapterId), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    savedText = text; updateDirty();
+    status('已儲存 ' + new Date().toLocaleTimeString(), 'ok');
+  } catch (e) { status('儲存失敗：' + e.message, 'err'); alert('儲存失敗：' + e.message); }
+}
+
+// ---------- 事件 ----------
+$('#btn-save').onclick = save;
+$('#btn-undo').onclick = undo;
+$('#chapter').onchange = async e => {
+  if (isDirty() && !confirm('目前的修改還沒有儲存，確定要切換章節嗎？（未存的修改會消失）')) { e.target.value = chapterId; return; }
+  try { await openChapter(e.target.value); } catch (err) { status('載入失敗：' + err.message, 'err'); }
+};
+document.querySelectorAll('input[name=pos]').forEach(r => r.onchange = renderAssets);
+addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (['SELECT', 'INPUT', 'TEXTAREA'].includes((e.target || {}).tagName)) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const d = e.key === 'ArrowDown' ? 1 : -1;
+    let i = sel + d;
+    while (i >= 0 && i < lines.length && kinds[i] === 'blank') i += d;
+    if (i >= 0 && i < lines.length) { sel = i; renderAll(); }
+  }
+});
+addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+(async function init() {
+  try {
+    cfg = await api('/chapters/index.json');
+    chars = await api('/chars.json');
+    assets = await api('/api/assets');
+  } catch (e) { status('初始化失敗：' + e.message + '（請用「啟動編輯器.bat」開啟）', 'err'); return; }
+  const sel$ = $('#chapter');
+  cfg.chapters.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.id}　${c.title}`; sel$.appendChild(o); });
+  $('#pv').src = '/index.html?editor=1';
+  renderTabs();
+  try { await openChapter(cfg.chapters[0].id); } catch (e) { status('載入失敗：' + e.message, 'err'); }
+  fitPreview();
+})();
+})();
