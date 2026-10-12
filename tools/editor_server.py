@@ -12,6 +12,7 @@
 每次儲存前先把舊檔備份到 tools/editor_backups/。
 """
 import json
+import os
 import re
 import shutil
 import sys
@@ -23,13 +24,25 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 CHAPTERS = ROOT / "chapters"
 BACKUPS = ROOT / "tools" / "editor_backups"
-HOST, PORT = "127.0.0.1", 8010
+HOST, PORT = "127.0.0.1", int(os.environ.get("EDITOR_PORT", "8010"))   # 平常用 8010；EDITOR_PORT 只給測試用
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 ALLOWED_ORIGINS = {f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"}
 ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,40}$")
 ASSET_DIRS = ["bg", "cg", "chars", "bgm", "se", "voice"]
 ASSET_EXT = {".webp", ".png", ".jpg", ".jpeg", ".svg", ".gif", ".mp3", ".ogg", ".wav", ".m4a"}
 MAX_BODY = 2 * 1024 * 1024
+
+
+class Server(ThreadingHTTPServer):
+    # Windows 的 SO_REUSEADDR 會讓好幾個程式同時綁定同一個埠，請求被隨機分給新舊伺服器，
+    # 所以這裡改成獨佔，已經有一個編輯器在跑時，第二個會直接報錯結束
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if sys.platform == "win32":
+            import socket
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -112,6 +125,46 @@ class Handler(SimpleHTTPRequestHandler):
         f.write_bytes(data)
         return self.send_json({"ok": True, "bytes": len(data)})
 
+    # ---- POST ----
+    def do_POST(self):
+        if not self.host_ok() or self.headers.get("Origin", "") not in ALLOWED_ORIGINS:
+            return self.fail(403, "forbidden")
+        if unquote(urlparse(self.path).path) != "/api/chars/sprite":
+            return self.fail(404, "unknown api")
+        try:
+            n = int(self.headers.get("Content-Length", "0"))
+            if n <= 0 or n > 4096:
+                raise ValueError
+            body = json.loads(self.rfile.read(n).decode("utf-8"))
+        except Exception:
+            return self.fail(400, "bad json")
+        status, msg = register_sprite(body)
+        return self.send_json({"ok": True} if status == 200 else {"error": msg}, status)
+
+
+def register_sprite(body):
+    """在 chars.json 的某個角色底下新增 / 更新一個表情 → 檔名"""
+    char, expr, fname = body.get("char"), body.get("expr"), body.get("file")
+    if not all(isinstance(x, str) for x in (char, expr, fname)):
+        return 400, "參數錯誤"
+    expr = expr.strip()
+    if not expr or len(expr) > 30 or re.search(r"\s", expr):
+        return 400, "表情名稱不可空白、不可含空格，且不超過 30 字"
+    if "/" in fname or "\\" in fname or ".." in fname or not (ROOT / "assets" / "chars" / fname).is_file():
+        return 400, "找不到這個立繪檔案"
+    f = ROOT / "chars.json"
+    raw = f.read_bytes()
+    data = json.loads(raw.decode("utf-8"))
+    if char not in data:
+        return 404, "chars.json 裡沒有這個角色"
+    BACKUPS.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(f, BACKUPS / f"chars_{time.strftime('%Y%m%d_%H%M%S')}.json")
+    data[char].setdefault("sprites", {})[expr] = fname
+    nl = "\r\n" if b"\r\n" in raw else "\n"
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    f.write_bytes(text.replace("\n", nl).encode("utf-8"))
+    return 200, "ok"
+
 
 def list_assets():
     out = {}
@@ -131,7 +184,12 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    try:
+        srv = Server((HOST, PORT), Handler)
+    except OSError:
+        print(f"埠 {PORT} 已經有另一個編輯器在執行了，直接用瀏覽器打開 http://{HOST}:{PORT}/tools/editor/index.html 即可。")
+        print("（如果畫面不對，請先把舊的黑色視窗關掉，再重新啟動。）")
+        return
     print(f"編輯器已啟動：http://{HOST}:{PORT}/tools/editor/index.html")
     print("要關閉請按 Ctrl+C 或直接關掉這個視窗。")
     try:

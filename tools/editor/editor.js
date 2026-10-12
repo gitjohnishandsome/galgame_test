@@ -274,7 +274,16 @@ function renderAssets() {
       });
       box.append(t, g);
     });
-    if (!any) box.innerHTML = '<div class="empty">chars.json 裡還沒有任何角色的立繪。<br>在 chars.json 的 sprites 加上表情與檔名，這裡就會出現。</div>';
+    // 放在 assets/chars 但還沒登記到 chars.json 的圖片：在這裡直接登記
+    const used = new Set();
+    keys.forEach(k => Object.values(chars[k].sprites || {}).forEach(f => used.add(f)));
+    const loose = (assets.chars || []).filter(a => isImg(a.name) && !used.has(a.name));
+    if (loose.length) {
+      const t = document.createElement('div'); t.className = 'group-title'; t.textContent = '尚未登記的立繪檔案（選角色、取表情名稱後按「登記」）';
+      const g = document.createElement('div'); g.className = 'grid';
+      loose.forEach(a => g.appendChild(looseCard(a, keys)));
+      box.append(t, g);
+    } else if (!any) box.innerHTML = '<div class="empty">assets/chars 裡還沒有立繪圖片。<br>把 PNG 放進去，這裡就會出現，可以直接登記。</div>';
   } else {
     const dir = tab, list = assets[dir] || [];
     if (dir === 'bgm') {
@@ -293,6 +302,27 @@ function renderAssets() {
     });
   }
   box.scrollTop = top;
+}
+
+// 尚未登記的立繪：選角色 + 表情名稱，寫進 chars.json
+function looseCard(a, keys) {
+  const c = imgCard('chars', a.name, a.size, [['', () => {}]], null, true);
+  const sel = document.createElement('select');
+  keys.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = chars[k].name; sel.appendChild(o); });
+  const guess = a.name.replace(/\.[^.]+$/, '').replace(/^.*?[_\-]/, '') || 'normal';
+  const inp = document.createElement('input'); inp.value = guess; inp.placeholder = '表情名稱'; inp.title = '表情名稱，例如 normal、smile（不可有空格）';
+  const btn = document.createElement('button'); btn.textContent = '登記';
+  btn.onclick = async () => {
+    try {
+      await api('/api/chars/sprite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char: sel.value, expr: inp.value, file: a.name }) });
+      chars = await api('/chars.json'); assets = await api('/api/assets');
+      pvReady = false; $('#pv').src = '/index.html?editor=1&t=' + Date.now();   // 預覽要重新載入才讀得到新的 chars.json
+      status(`已登記：${chars[sel.value].name} / ${inp.value}`, 'ok'); renderAll();
+    } catch (e) { status('登記失敗：' + e.message, 'err'); alert('登記失敗：' + e.message); }
+  };
+  const acts = document.createElement('div'); acts.className = 'acts'; acts.style.flexDirection = 'column';
+  acts.append(sel, inp, btn); c.appendChild(acts);
+  return c;
 }
 
 // ---------- 載入 / 儲存 ----------
