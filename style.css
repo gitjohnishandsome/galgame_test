@@ -93,3 +93,4 @@ button.on{background:#a6402f}
 #next-mark{right:60px;bottom:66px;font-size:20px;color:#bcd4ff;letter-spacing:-.15em;-webkit-text-stroke:0}
 #pic.above{bottom:250px}
 #menubar{right:50px;bottom:14px}
+#title-brand #game-logo{width:400px;max-width:none;filter:drop-shadow(0 0 3px rgba(255,255,255,.95)) drop-shadow(0 0 10px rgba(255,255,255,.7)) drop-shadow(0 3px 8px rgba(0,0,0,.55))}
