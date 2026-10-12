@@ -75,3 +75,24 @@ button.on{background:#a6402f}
 #menubar button svg{width:26px;height:26px}
 #menubar button:hover{background:rgba(120,160,255,.22);color:#fff;transform:scale(1.12)}
 #menubar button.on{background:rgba(120,160,255,.35);color:#fff}
+
+/* 對話框：整條半透明藍灰色帶、頂端細線加四葉草、粗體描邊文字、名字兩側愛心 */
+#textbox{left:0;right:0;bottom:0;height:236px;padding:62px 150px 60px 120px;border:none;border-radius:0;
+  background:
+    linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.04) 75%) 0 0/56px 56px,
+    linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.04) 75%) 28px 28px/56px 56px,
+    linear-gradient(rgba(150,180,225,.42),rgba(50,70,115,.74));
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  border-top:2px solid rgba(160,200,255,.95);box-shadow:0 -2px 12px rgba(120,170,255,.35)}
+#textbox::after{content:"";position:absolute;right:14px;top:-17px;width:32px;height:32px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='%23a9c9ff' stroke='%234a6aa8' stroke-width='1.6'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Ccircle cx='21' cy='11' r='7'/%3E%3Ccircle cx='11' cy='21' r='7'/%3E%3Ccircle cx='21' cy='21' r='7'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat}
+#text{font-size:32px;line-height:1.7;font-weight:700;letter-spacing:.08em;color:#fff;
+  -webkit-text-stroke:5px #243a66;paint-order:stroke fill;
+  text-shadow:0 2px 4px rgba(10,20,50,.6)}
+#name{left:96px;top:-52px;padding:0 34px;background:none;border-radius:0;font-size:32px;font-weight:900;letter-spacing:.12em;
+  -webkit-text-stroke:5px #243a66;paint-order:stroke fill;text-shadow:0 2px 4px rgba(10,20,50,.6)}
+#name::before,#name::after{content:"";position:absolute;top:50%;width:26px;height:26px;margin-top:-13px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 21C5 15 2 11 2 7.5A5 5 0 0 1 12 6a5 5 0 0 1 10 1.5C22 11 19 15 12 21z' fill='none' stroke='%238fb4ff' stroke-width='2.6'/%3E%3C/svg%3E") center/contain no-repeat}
+#name::before{left:0}
+#name::after{right:0;transform:scaleX(-1)}
+#next-mark{right:60px;bottom:66px;font-size:20px;color:#bcd4ff;letter-spacing:-.15em;-webkit-text-stroke:0}
+#pic.above{bottom:250px}
+#menubar{right:50px;bottom:14px}
