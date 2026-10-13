@@ -297,6 +297,7 @@ function initAudio() {
 }
 function resumeAudio() {
   initAudio();
+  loadHoverSe();
   if (actx && actx.state === 'suspended') actx.resume();
   // 瀏覽器擋掉自動播放時（例如一進網頁的標題音樂），第一次操作後補播
   if (wantBgm && bgmEl.paused) setBgm(wantBgm);
@@ -351,6 +352,40 @@ function setBgm(n, sec) {
   if (bgmEl.paused || !bgmEl.src) { start(); return; }
   fadeBgm(0, outMs, start);                                    // 先淡出目前這首，淡到 0 才停止 / 換歌
 }
+// ---------- 按鈕的滑鼠移入音效 ----------
+// 音效檔預設 assets/se/ui_hover.wav；在 chapters/index.json 加 "uiHoverSe": "檔名" 可換成別的，填 null 則關閉。
+// 用 Web Audio 解碼一次後重複播放（很輕量）；音量跟著「全部音量」與靜音；觸控裝置沒有「移入」所以不播；瀏覽器規定要玩家點過畫面一次才發得出聲音
+let hoverBuf = null, hoverLoading = false, hoverLast = 0;
+async function loadHoverSe() {
+  if (hoverBuf || hoverLoading || !actx || EDITOR) return;
+  const name = cfg && cfg.uiHoverSe !== undefined ? cfg.uiHoverSe : 'ui_hover.wav';
+  if (!name) return;
+  hoverLoading = true;
+  try {
+    const r = await fetch(DIR.se + name);
+    if (!r.ok) throw new Error(r.status);
+    hoverBuf = await actx.decodeAudioData(await r.arrayBuffer());
+  } catch (e) { console.warn('找不到按鈕音效：', name); }
+  hoverLoading = false;
+}
+function playHover() {
+  const now = performance.now();
+  if (EDITOR || muted || now - hoverLast < 70) return;      // 太密集時略過，避免嘰嘰嘰一串
+  if (!hoverBuf) { loadHoverSe(); return; }
+  if (!actx || actx.state !== 'running') return;
+  hoverLast = now;
+  const src = actx.createBufferSource(), g = actx.createGain();
+  src.buffer = hoverBuf; g.gain.value = vol.master * 0.45;
+  src.connect(g); g.connect(actx.destination);
+  src.start();
+}
+document.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch') return;
+  const b = e.target.closest && e.target.closest('button');
+  if (!b || b.disabled || (e.relatedTarget && b.contains(e.relatedTarget))) return;
+  playHover();
+});
+
 function playSe(n) {
   if (EDITOR) return;
   const a = new Audio(DIR.se + n);
