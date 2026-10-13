@@ -1,22 +1,22 @@
 {
   "title": "焦糖未乾",
   "subtitle": "",
-  "titleBg": "8e44b5f9-a703-4ea7-85e1-dda62ecbdf57.png",
-  "titleLogo": "7O7W3.png",
-  "titleSubLogo": "IGSTD.png",
+  "titleBg": "8e44b5f9-a703-4ea7-85e1-dda62ecbdf57.webp",
+  "titleLogo": "7O7W3.webp",
+  "titleSubLogo": "IGSTD.webp",
   "titleBgm": "House_of_Nightmare.mp3",
   "chapters": [
     {
       "id": "ch0",
-      "title": "第 0 場　夜跑"
+      "title": "第一章　夜跑"
     },
     {
       "id": "ch1",
-      "title": "第一章　末班車"
+      "title": "第二章    手術室"
     },
     {
       "id": "ch2",
-      "title": "第二章　終點站"
+      "title": "第三章　未乾"
     }
   ]
 }

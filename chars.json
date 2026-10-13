@@ -16,7 +16,10 @@
   "shihan": {
     "name": "林詩涵",
     "color": "#ffd6a5",
-    "sprites": {}
+    "sprites": {
+      "normal": "shihan_normal.png",
+      "serious": "shihan_serious.png"
+    }
   },
   "youran": {
     "name": "陳宥然",
