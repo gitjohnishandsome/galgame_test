@@ -156,55 +156,132 @@ function updateDirty() {
   $('#btn-undo').disabled = !undoStack.length;
 }
 
-// ---------- 編輯台詞文字 ----------
+// ---------- 編輯台詞文字（彈出視窗）----------
+// 把一段文字依句子拆成多行：換行一定拆開；每行超過 max 字時再依句號、逗號拆，並把太短的相鄰句子合併到不超過 max
+function splitText(text, max) {
+  const out = [];
+  for (const para of text.split(/\r?\n/)) {
+    const p = para.trim();
+    if (!p) continue;
+    if (!max || p.length <= max) { out.push(p); continue; }
+    const sents = p.match(/[^。！？!?…]+[。！？!?…]*[」』）)]*|[^。！？!?…]+$/g) || [p];
+    let cur = '';
+    for (const s of sents) {
+      if ((cur + s).length <= max) { cur += s; continue; }
+      if (cur) { out.push(cur); cur = ''; }
+      if (s.length <= max) { cur = s; continue; }
+      const parts = s.match(/[^，、；,;：:]+[，、；,;：:]*/g) || [s];      // 單句太長：在逗號、頓號後斷開
+      for (const q of parts) {
+        if ((cur + q).length <= max) cur += q;
+        else {
+          if (cur) { out.push(cur); cur = ''; }
+          if (q.length <= max) cur = q;
+          else for (let k = 0; k < q.length; k += max) out.push(q.slice(k, k + max));
+        }
+      }
+    }
+    if (cur) out.push(cur);
+  }
+  return out;
+}
+const sayLabel = i => { const s = sayInfo(lines[i] || ''); return (s.who ? chars[s.who].name + '：' : '') + s.text; };
+
 function startEdit(i) {
   if (i == null || i < 0 || i >= lines.length || kinds[i] === 'blank') return;
-  editIdx = i; editNew = false; sel = i; renderAll();
+  editIdx = i; editNew = false; sel = i; renderAll(); showEditModal(i);
 }
+function closeEditModal() { $('#edit-modal').hidden = true; }
 function cancelEdit() {
   if (editIdx == null) return;
   const wasNew = editNew;
-  editIdx = null; editNew = false;
+  editIdx = null; editNew = false; closeEditModal();
   if (wasNew) undo(); else renderAll();     // 新增到一半取消 → 整個還原
 }
-function commitEdit(i, text) {
-  text = text.replace(/[\r\n]+/g, ' ');
+// 把編輯結果（一行或多行）換進去
+function applyEdit(i, newLines) {
   const wasNew = editNew;
-  editIdx = null; editNew = false;
-  if (wasNew && !text.replace(/^[^：:]{1,12}[：:]/, '').trim()) { undo(); return; }   // 新增但沒填字 → 當作取消
-  if (text === lines[i]) { classify(); renderAll(); return; }
-  if (wasNew) { lines[i] = text; classify(); renderAll(); }                         // 新增的行：復原一次就整個消失
-  else mutate(() => { lines[i] = text; });
+  editIdx = null; editNew = false; closeEditModal();
+  if (!newLines.length) { if (wasNew) undo(); else renderAll(); return; }          // 全空 → 新增的當作取消，既有的不動
+  if (!wasNew && newLines.length === 1 && newLines[0] === lines[i]) { classify(); renderAll(); return; }
+  if (wasNew) { lines.splice(i, 1, ...newLines); classify(); sel = i; renderAll(); }   // 新增的行：復原一次就整個消失
+  else { mutate(() => { lines.splice(i, 1, ...newLines); sel = i; }); }
 }
-function editorFor(i) {
-  const k = kinds[i], wrap = document.createElement('div'); wrap.className = 'ed';
-  const inp = document.createElement('input'); inp.type = 'text';
-  let sp = null, cnt = null;
-  const compose = () => (sp && sp.value ? `${sp.value}：${inp.value}` : inp.value);
-  if (k === 'say' || (k === 'blank' && editNew)) {
-    const s = sayInfo(lines[i] || '');
-    sp = document.createElement('select');
-    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '旁白'; sp.appendChild(o0);
-    Object.keys(chars).forEach(key => { const o = document.createElement('option'); o.value = key; o.textContent = chars[key].name; sp.appendChild(o); });
-    sp.value = s.who || '';
-    inp.value = s.text; inp.placeholder = '台詞（一行最多約 50 字）';
-    cnt = document.createElement('span'); cnt.className = 'cnt';
-    const upd = () => { const n = inp.value.length; cnt.textContent = n + ' 字'; cnt.classList.toggle('over', n > 50); cnt.title = n > 50 ? '超過約 50 字，對話框可能放不下，建議拆成兩句' : ''; };
-    inp.oninput = upd; upd();
-    wrap.append(sp, inp, cnt);
-  } else {
-    inp.value = lines[i]; inp.placeholder = '指令或文字';
-    wrap.append(inp);
-  }
-  const ok = document.createElement('button'); ok.textContent = '確定'; ok.onclick = () => commitEdit(i, compose());
-  const no = document.createElement('button'); no.textContent = '取消'; no.onclick = cancelEdit;
-  wrap.append(ok, no);
-  inp.onkeydown = e => {
-    e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); commitEdit(i, compose()); }
-    else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+function showEditModal(i) {
+  const modal = $('#edit-modal'), box = modal.querySelector('.box');
+  const k = kinds[i], isSay = k === 'say' || (k === 'blank' && editNew);
+  box.textContent = '';
+  const h = document.createElement('h3'); h.textContent = (editNew ? '新增台詞' : isSay ? '編輯台詞' : '編輯這一行') + `（第 ${i + 1} 行）`;
+  box.appendChild(h);
+
+  // 前後文：讓你知道這句在哪裡
+  const ctx = (label, idxs) => {
+    const items = idxs.filter(x => x >= 0 && x < lines.length && kinds[x] === 'say' && x !== i);
+    if (!items.length) return;
+    const d = document.createElement('div'); d.className = 'ctx';
+    d.textContent = label + items.map(sayLabel).join(' / ');
+    box.appendChild(d);
   };
-  return wrap;
+  const before = []; for (let x = i - 1; x >= 0 && before.length < 2; x--) if (kinds[x] === 'say') before.unshift(x);
+  const after = []; for (let x = i + 1; x < lines.length && after.length < 1; x++) if (kinds[x] === 'say') after.push(x);
+  ctx('前面：', before);
+
+  let sp = null, auto = null, max = null;
+  const s0 = isSay ? sayInfo(lines[i] || '') : { who: null, text: (lines[i] || '').trim() };
+  const row = document.createElement('div'); row.className = 'form-row';
+  if (isSay) {
+    sp = document.createElement('select');
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '旁白（沒有說話者）'; sp.appendChild(o0);
+    Object.keys(chars).forEach(key => { const o = document.createElement('option'); o.value = key; o.textContent = chars[key].name; sp.appendChild(o); });
+    sp.value = s0.who || '';
+    const lb = document.createElement('label'); lb.textContent = '說話者 '; lb.appendChild(sp);
+    auto = document.createElement('input'); auto.type = 'checkbox'; auto.checked = true;
+    const lb2 = document.createElement('label'); lb2.append(auto, document.createTextNode(' 太長的句子自動拆成多行，每行最多 '));
+    max = document.createElement('input'); max.type = 'number'; max.min = 20; max.max = 80; max.value = 50; max.style.width = '56px';
+    lb2.append(max, document.createTextNode(' 字'));
+    row.append(lb, lb2);
+    box.appendChild(row);
+  }
+
+  const ta = document.createElement('textarea');
+  ta.value = s0.text; ta.rows = isSay ? 9 : 3; ta.spellcheck = false;
+  ta.placeholder = isSay ? '在這裡輸入或貼上台詞。換行 = 分成不同行；太長的句子會依句號、逗號自動拆開。' : '指令或文字（單行）';
+  box.appendChild(ta);
+
+  const info = document.createElement('div'); info.className = 'cnt-line'; box.appendChild(info);
+  const prev = document.createElement('div'); prev.className = 'prev'; box.appendChild(prev);
+  ctx('後面：', after);
+
+  const result = () => {
+    if (!isSay) return [ta.value.replace(/[\r\n]+/g, ' ').trim()].filter(Boolean);
+    const m = auto.checked ? Math.max(20, Math.min(80, Number(max.value) || 50)) : 0;
+    return splitText(ta.value, m);
+  };
+  const compose = t => (sp && sp.value ? `${sp.value}：${t}` : t);
+  const refresh = () => {
+    const r = result();
+    info.textContent = isSay ? `共 ${ta.value.replace(/\s/g, '').length} 字 → 會變成 ${r.length} 行` : '';
+    prev.textContent = '';
+    if (isSay && r.length > 1) r.forEach((t, n) => {
+      const d = document.createElement('div'); d.className = 'pl' + (t.length > 50 ? ' over' : '');
+      d.textContent = `${n + 1}. ${t}`; prev.appendChild(d);
+    });
+  };
+  ta.oninput = refresh; if (auto) { auto.onchange = refresh; max.oninput = refresh; }
+  refresh();
+
+  const btns = document.createElement('div'); btns.className = 'btns';
+  const ok = document.createElement('button'); ok.textContent = '確定（Ctrl+Enter）';
+  const no = document.createElement('button'); no.textContent = '取消（Esc）';
+  const confirm = () => applyEdit(i, result().map(t => (isSay ? compose(t) : t)));
+  ok.onclick = confirm; no.onclick = cancelEdit;
+  btns.append(ok, no); box.appendChild(btns);
+  modal.onkeydown = e => {
+    e.stopPropagation();                                     // 不要讓編輯器的快捷鍵（Ctrl+Z、Enter…）在視窗裡生效
+    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirm(); }
+  };
+  modal.hidden = false;
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 // 在選取的那一行後面新增一句台詞（預設沿用目前這句的說話者）
 function addSay() {
@@ -214,7 +291,7 @@ function addSay() {
   const at = Math.min(lines.length, sel + 1);
   undoStack.push({ lines: lines.slice(), sel });
   lines.splice(at, 0, cur.who ? `${cur.who}：` : '');
-  classify(); sel = at; editIdx = at; editNew = true; renderAll();
+  classify(); sel = at; editIdx = at; editNew = true; renderAll(); showEditModal(at);
 }
 function deleteSelected() {
   if (editIdx != null || !lines.length) return;
@@ -235,9 +312,8 @@ function renderLines() {
     const k = kinds[i];
     const row = document.createElement('div');
     row.className = 'ln ' + (k === 'choiceStart' || k === 'choiceEnd' || k === 'opt' ? 'choice' : k) + (i === sel ? ' sel' : '') + (i === j ? ' disp' : '');
-    if (k === 'blank' && i !== editIdx) { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
+    if (k === 'blank') { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
     const no = document.createElement('span'); no.className = 'no'; no.textContent = i + 1;
-    if (i === editIdx) { row.className += ' editing'; row.append(no, editorFor(i)); box.appendChild(row); return; }
     const body = document.createElement('span'); body.className = 'body';
     if (k === 'say') {
       const s = sayInfo(l);
@@ -255,10 +331,8 @@ function renderLines() {
     box.appendChild(row);
   });
   box.scrollTop = keepTop;
-  const el = box.querySelector('.ln.editing') || box.querySelector('.ln.sel') || box.querySelector('.ln.disp');
+  const el = box.querySelector('.ln.sel') || box.querySelector('.ln.disp');
   if (el) el.scrollIntoView({ block: 'nearest' });
-  const inp = box.querySelector('.ln.editing input[type=text]');
-  if (inp && document.activeElement !== inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
 function chip(label, value, actions) {
