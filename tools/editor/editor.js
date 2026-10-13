@@ -108,7 +108,8 @@ let bgMode = '';     // 背景轉場：'' = 淡入淡出（預設）、'cut' = �
 const setBg = n => apply(`@bg ${n}${bgMode ? ' ' + bgMode : ''}`, c => c.name === 'bg');
 const setCg = n => apply(`@cg ${n}`, c => c.name === 'cg');
 const setPic = (n, pos) => apply(`@pic ${n}${pos && pos !== 'center' ? ' ' + pos : ''}`, c => c.name === 'pic');
-const setBgm = n => apply(`@bgm ${n}`, c => c.name === 'bgm');
+let bgmFade = '';    // 音樂漸變秒數（留空 = 使用預設）
+const setBgm = n => apply(`@bgm ${n}${bgmFade !== '' ? ' ' + bgmFade : ''}`, c => c.name === 'bgm');
 const addSe = n => mutate(() => { const j = displayIndex(sel); lines.splice(j, 0, `@se ${n}`); sel = j + 1; });
 function showSprite(char, expr, pos) {
   apply(`@show ${char} ${expr} ${pos}`, c =>
@@ -486,9 +487,16 @@ function renderAssets() {
     const dir = tab, list = assets[dir] || [];
     box.appendChild(importBar(dir));
     if (dir === 'bgm') {
+      const fr = document.createElement('div'); fr.className = 'row';
+      const fl = document.createElement('span'); fl.className = 'nm'; fl.textContent = '漸變秒數（淡入 / 淡出）；留空 = 預設（停止 1.5 秒、換歌 1 秒）';
+      const fi = document.createElement('input'); fi.type = 'number'; fi.min = 0; fi.max = 30; fi.step = 0.5; fi.value = bgmFade; fi.placeholder = '預設'; fi.style.width = '70px';
+      fi.oninput = () => { bgmFade = fi.value === '' ? '' : String(Math.max(0, Math.min(30, Number(fi.value) || 0))); };
+      fr.append(fl, fi); box.appendChild(fr);
+    }
+    if (dir === 'bgm') {
       const off = document.createElement('div'); off.className = 'row';
       off.innerHTML = '<span class="nm">停止音樂（@bgm off）</span>';
-      const b = document.createElement('button'); b.textContent = '套用'; b.onclick = () => apply('@bgm off', c => c.name === 'bgm');
+      const b = document.createElement('button'); b.textContent = '套用'; b.onclick = () => apply(`@bgm off${bgmFade !== '' ? ' ' + bgmFade : ''}`, c => c.name === 'bgm');
       off.appendChild(b); box.appendChild(off);
     }
     if (!list.length) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = '這個資料夾還沒有檔案'; box.appendChild(d); }

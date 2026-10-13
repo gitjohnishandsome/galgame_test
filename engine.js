@@ -317,27 +317,39 @@ function playVoice(n) {
   voiceEl.play().catch(() => {});
 }
 let wantBgm = null;
-function setBgm(n) {
+// 以「時間」為準的音量漸變：從目前音量線性變到 to，花 ms 毫秒；中途有新的漸變會取代舊的
+let fadeTok = 0;
+function fadeBgm(to, ms, done) {
+  const tok = ++fadeTok;
+  clearInterval(fadeT);
+  const from = getBgmLevel(), t0 = performance.now();
+  if (ms <= 0 || from === to) { setBgmLevel(to); if (done) done(); return; }
+  const id = fadeT = setInterval(() => {
+    if (tok !== fadeTok) { clearInterval(id); return; }
+    const k = Math.min(1, (performance.now() - t0) / ms);
+    setBgmLevel(from + (to - from) * k);
+    if (k >= 1) { clearInterval(id); if (done) done(); }
+  }, 30);
+}
+// sec = 漸變秒數（劇情裡 @bgm 檔名 秒數 / @bgm off 秒數）；沒指定時：停止 1.5 秒淡出、換歌 1 秒淡出再 1.2 秒淡入。快進時縮短
+function setBgm(n, sec) {
   if (EDITOR) return;
   wantBgm = n;
   if (S) S.V.bgm = n;
   const src = n ? new URL(DIR.bgm + n, location.href).href : null;
-  if (n && bgmEl.src === src && !bgmEl.paused) { setBgmLevel(targetVol()); return; }
-  clearInterval(fadeT);
+  const quick = holding || skipMode;
+  const custom = typeof sec === 'number' && isFinite(sec) && sec >= 0;
+  const outMs = quick ? 200 : custom ? sec * 1000 : (n ? 1000 : 1500);
+  const inMs = quick ? 200 : custom ? sec * 1000 : 1200;
+  if (n && bgmEl.src === src && !bgmEl.paused) { fadeBgm(targetVol(), 250); return; }   // 同一首：只調音量
   const start = () => {
     if (!n) { bgmEl.pause(); return; }
     bgmEl.src = src; setBgmLevel(0);
     const p = bgmEl.play(); if (p) p.catch(() => {});
-    fadeT = setInterval(() => {
-      setBgmLevel(Math.min(targetVol(), getBgmLevel() + 0.05));
-      if (getBgmLevel() >= targetVol()) clearInterval(fadeT);
-    }, 60);
+    fadeBgm(targetVol(), inMs);
   };
   if (bgmEl.paused || !bgmEl.src) { start(); return; }
-  fadeT = setInterval(() => {
-    setBgmLevel(Math.max(0, getBgmLevel() - 0.1));
-    if (getBgmLevel() <= 0) { clearInterval(fadeT); start(); }
-  }, 40);
+  fadeBgm(0, outMs, start);                                    // 先淡出目前這首，淡到 0 才停止 / 換歌
 }
 function playSe(n) {
   if (EDITOR) return;
@@ -381,7 +393,7 @@ function exec(op) {
     }
     case 'cg': setCg(a[0] === 'off' ? null : a[0]); break;
     case 'pic': setPic(a[0] === 'off' ? null : a[0], a[1] === 'above' ? 'center' : a[1], a.includes('above')); break;
-    case 'bgm': setBgm(a[0] === 'off' ? null : a[0]); break;
+    case 'bgm': setBgm(a[0] === 'off' ? null : a[0], a[1] !== undefined && a[1] !== '' && !isNaN(a[1]) ? Number(a[1]) : undefined); break;
     case 'se': playSe(a[0]); break;
     case 'voice': playVoice(a[0]); break;
     case 'show': {
