@@ -104,7 +104,8 @@ function upsertCmd(text, matcher) {
 }
 const apply = (text, matcher) => mutate(() => upsertCmd(text, matcher));
 
-const setBg = n => apply(`@bg ${n}`, c => c.name === 'bg');
+let bgMode = '';     // 背景轉場：'' = 淡入淡出（預設）、'cut' = 直接切換、'black' = 變黑再亮
+const setBg = n => apply(`@bg ${n}${bgMode ? ' ' + bgMode : ''}`, c => c.name === 'bg');
 const setCg = n => apply(`@cg ${n}`, c => c.name === 'cg');
 const setPic = (n, pos) => apply(`@pic ${n}${pos && pos !== 'center' ? ' ' + pos : ''}`, c => c.name === 'pic');
 const setBgm = n => apply(`@bgm ${n}`, c => c.name === 'bgm');
@@ -352,6 +353,14 @@ function renderAssets() {
   if (tab === 'bg' || tab === 'cg') {
     const list = (assets[tab] || []).filter(a => isImg(a.name));
     if (!list.length) { box.innerHTML = '<div class="empty">這個資料夾還沒有圖片</div>'; return; }
+    if (tab === 'bg') {
+      const bar = document.createElement('div'); bar.className = 'row';
+      const lb = document.createElement('span'); lb.className = 'nm'; lb.textContent = '換背景時的轉場';
+      const s = document.createElement('select');
+      [['', '淡入淡出（預設）'], ['cut', '直接切換'], ['black', '變黑再亮']].forEach(([v, n]) => { const o = document.createElement('option'); o.value = v; o.textContent = n; s.appendChild(o); });
+      s.value = bgMode; s.onchange = () => { bgMode = s.value; };
+      bar.append(lb, s); box.appendChild(bar);
+    }
     const g = document.createElement('div'); g.className = 'grid';
     list.forEach(a => {
       if (tab === 'bg') g.appendChild(imgCard('bg', a.name, a.size, [['', () => setBg(a.name)]], V.bg));

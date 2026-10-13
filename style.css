@@ -123,3 +123,8 @@ button.on{background:#a6402f}
 
 /* 場景編輯器預覽模式：隱藏玩家用的按鈕 */
 body.editor #menubar,body.editor #btn-mute,body.editor #loading{display:none!important}
+
+/* 背景轉場：變黑再亮用的黑幕（在背景與立繪之上、對話框之下）、提示訊息 */
+#fx{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .4s}
+.bgghost{pointer-events:none}
+#toast{position:absolute;left:50%;top:18px;transform:translateX(-50%);z-index:26;max-width:80%;padding:8px 20px;border-radius:20px;background:rgba(15,25,50,.92);border:1px solid rgba(160,200,255,.6);font-size:22px;opacity:0;transition:opacity .4s;pointer-events:none;text-align:center}

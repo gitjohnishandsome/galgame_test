@@ -185,7 +185,40 @@ const el = { bg: $('#bg'), cg: $('#cg'), name: $('#name'), text: $('#text'), box
   title: $('#title-screen'), panel: $('#panel'), pbody: $('#panel-body'), ptitle: $('#panel-title'),
   spr: { left: $('#spr-left'), center: $('#spr-center'), right: $('#spr-right') } };
 
-function setBg(n) { S.V.bg = n; el.bg.style.backgroundImage = n ? `url(${DIR.bg + n})` : ''; }
+// 背景切換：mode = 'cut'（直接切）| 'fade'（交叉淡化，預設）。第一次出現、讀檔、編輯器預覽一律直接切
+function setBg(n, mode) {
+  const prev = S.V.bg;
+  S.V.bg = n;
+  const url = n ? `url(${DIR.bg + n})` : '';
+  if (mode !== 'fade' || EDITOR || !prev || !n || prev === n) { el.bg.style.backgroundImage = url; return; }
+  // 舊背景複製一份蓋在上面淡出，新背景在下面（等新圖載入完再開始，避免閃一下）
+  const ghost = document.createElement('div');
+  ghost.className = 'layer bgghost';
+  ghost.style.backgroundImage = el.bg.style.backgroundImage; ghost.style.opacity = 1;
+  el.bg.after(ghost);
+  void ghost.offsetWidth;
+  el.bg.style.backgroundImage = url;
+  whenLoaded(DIR.bg + n, 700).then(() => {
+    ghost.style.opacity = 0;
+    setTimeout(() => ghost.remove(), 650);
+  });
+}
+const whenLoaded = (src, ms) => new Promise(res => { const im = new Image(); const done = () => res(); im.onload = im.onerror = done; im.src = src; setTimeout(done, ms); });
+// 變黑再亮：先淡出到全黑，換背景，再亮起來（這段時間不能點擊，約 1 秒）
+function bgThroughBlack(n) {
+  busy = true; waiting = null;
+  const fx = $('#fx');
+  fx.style.transition = 'opacity .4s'; fx.style.opacity = 1;
+  const loaded = whenLoaded(DIR.bg + n, 1500);
+  setTimeout(async () => {
+    await loaded;
+    setBg(n, 'cut');
+    setTimeout(() => {
+      fx.style.opacity = 0;
+      setTimeout(() => { busy = false; run(); }, 420);
+    }, 120);
+  }, 420);
+}
 function setCg(n) {
   S.V.cg = n;
   if (n) { el.cg.style.backgroundImage = `url(${DIR.cg + n})`; el.cg.style.opacity = 1; }
@@ -231,7 +264,7 @@ function setPic(name, pos, above) {
   box.className = 'on ' + (pos || 'center') + (above ? ' above' : '');
 }
 function applyV(V) {
-  setBg(V.bg); setCg(V.cg);
+  setBg(V.bg, 'cut'); setCg(V.cg);
   setPic(V.pic && V.pic.name, V.pic && V.pic.pos, V.pic && V.pic.above);
   for (const p of POS) setSpr(p, V.spr[p] && V.spr[p].c, V.spr[p] && V.spr[p].e, true);
   setBgm(V.bgm);
@@ -340,7 +373,12 @@ function exec(op) {
     case 'say': showSay(op); return true;
     case 'choice': showChoice(op); return true;
     case 'title': showTitleCard(op.arg); return true;
-    case 'bg': setBg(a[0]); break;
+    case 'bg': {
+      const fast = holding || skipMode;                                  // 快進時不做轉場
+      if (a[1] === 'black' && !EDITOR && !fast && S.V.bg && a[0] && a[0] !== S.V.bg) { bgThroughBlack(a[0]); return true; }
+      setBg(a[0], a[1] === 'cut' || fast ? 'cut' : 'fade');
+      break;
+    }
     case 'cg': setCg(a[0] === 'off' ? null : a[0]); break;
     case 'pic': setPic(a[0] === 'off' ? null : a[0], a[1] === 'above' ? 'center' : a[1], a.includes('above')); break;
     case 'bgm': setBgm(a[0] === 'off' ? null : a[0]); break;
@@ -429,8 +467,9 @@ function showSay(op) {
     S.history.push({ key, name: c ? c.name : '', text: op.text });
     if (S.history.length > 80) S.history.shift();
   }
-  const wasRead = !!read[key];
-  if (!wasRead) { read[key] = 1; LS.set('read', read); }
+  const rk = S.chapter + ':' + opFp(op);                       // 已讀記錄用內容指紋，改劇情行數不會讓已讀標記錯位
+  const wasRead = !!read[rk];
+  if (!wasRead) { read[rk] = 1; LS.set('read', read); }
   waiting = 'say';
   snapshot();
   if (typing) clearInterval(typing.timer);
@@ -533,16 +572,88 @@ setInterval(() => {
   if (skipMode) {
     if (typing) { finishTyping(); return; }
     const nextOp = cur.ops[S.idx];
-    if (nextOp && nextOp.t === 'say' && !read[S.chapter + ':' + S.idx]) { skipMode = false; syncSkipBtn(); return; }
+    if (nextOp && nextOp.t === 'say' && !read[S.chapter + ':' + opFp(nextOp)]) { skipMode = false; syncSkipBtn(); return; }
     advance();
   }
 }, 60);
 function syncSkipBtn() { $('#btn-skip').classList.toggle('on', skipMode); }
 
 // ---------- 存檔 ----------
+// ---------- 存檔相容：劇情改過之後，讀檔仍能回到同一句 ----------
+// 存檔不只記「第幾個指令」（改劇情就會錯位），還記那一句的內容指紋、前後句的指紋、最近的標籤與偏移，
+// 讀檔時如果原位置的內容對不上，就在新的章節裡重新找回來
+function hashStr(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+const isBlock = op => !!op && (op.t === 'say' || op.t === 'choice');
+const opFp = op => (!op ? '' : op.t === 'say' ? hashStr((op.who || '') + '|' + op.text) : op.t === 'choice' ? hashStr('c|' + op.opts.map(o => o.text).join('|')) : '');
+function neighborFp(ops, i, dir) { for (let k = i + dir; k >= 0 && k < ops.length; k += dir) if (isBlock(ops[k])) return opFp(ops[k]); return ''; }
+function makeAnchor(ch, idx) {
+  let label = null, base = -1;
+  for (const [n, i] of Object.entries(ch.labels)) if (i <= idx && i > base) { label = n; base = i; }
+  return { fp: opFp(ch.ops[idx]), prev: neighborFp(ch.ops, idx, -1), next: neighborFp(ch.ops, idx, 1), label, off: label ? idx - base : null };
+}
+function relocate(ch, d) {
+  const ops = ch.ops, a = d.anchor, max = ops.length;
+  if (!a || !a.fp) return { idx: Math.min(d.idx, max), exact: true };          // 舊版存檔：照舊用位置
+  if (d.idx < max && opFp(ops[d.idx]) === a.fp) return { idx: d.idx, exact: true };
+  let best = -1, bs = -Infinity;
+  for (let i = 0; i < max; i++) {
+    if (!isBlock(ops[i]) || opFp(ops[i]) !== a.fp) continue;
+    let s = 0;
+    if (a.label && ch.labels[a.label] !== undefined && ch.labels[a.label] + a.off === i) s += 4;
+    if (a.prev && neighborFp(ops, i, -1) === a.prev) s += 2;
+    if (a.next && neighborFp(ops, i, 1) === a.next) s += 2;
+    s -= Math.abs(i - d.idx) / 1000;                                             // 分數一樣時，選離原位置最近的
+    if (s > bs) { bs = s; best = i; }
+  }
+  if (best >= 0) return { idx: best, exact: false };
+  // 那一句本身被改掉了（找不到相同內容）：先找「前一句、後一句都對得上」的位置，也就是被改的那一句
+  best = -1; bs = -Infinity;
+  for (let i = 0; i < max; i++) {
+    if (!isBlock(ops[i])) continue;
+    let s = 0;
+    if (a.prev && neighborFp(ops, i, -1) === a.prev) s += 2;
+    if (a.next && neighborFp(ops, i, 1) === a.next) s += 2;
+    if (s < 2) continue;
+    s -= Math.abs(i - d.idx) / 1000;
+    if (s > bs) { bs = s; best = i; }
+  }
+  if (best >= 0) return { idx: best, exact: false, lost: true };
+  // 還是找不到：用「最近的標籤 + 偏移」，不行就用原本的位置，再往後找最近的一句台詞
+  let i = a.label && ch.labels[a.label] !== undefined ? ch.labels[a.label] + a.off : d.idx;
+  i = Math.max(0, Math.min(i, max));
+  while (i < max && !isBlock(ops[i])) i++;
+  return { idx: i, exact: false, lost: true };
+}
+// 位置換了以後，畫面（背景、立繪、音樂…）依章節由上往下重新推算
+function visualAt(ch, idx) {
+  const V = blankV();
+  for (let i = 0; i < idx && i < ch.ops.length; i++) {
+    const op = ch.ops[i], a = (op.arg || '').split(/\s+/);
+    switch (op.t) {
+      case 'bg': V.bg = a[0] || null; break;
+      case 'cg': V.cg = !a[0] || a[0] === 'off' ? null : a[0]; break;
+      case 'pic': V.pic = !a[0] || a[0] === 'off' ? null : { name: a[0], pos: a[1] && a[1] !== 'above' ? a[1] : 'center', above: a.includes('above') }; break;
+      case 'bgm': V.bgm = !a[0] || a[0] === 'off' ? null : a[0]; break;
+      case 'show': {
+        const pos = a[2] || 'center';
+        for (const p of POS) if (p !== pos && V.spr[p] && V.spr[p].c === a[0]) V.spr[p] = null;
+        V.spr[pos] = { c: a[0], e: a[1] }; break;
+      }
+      case 'hide': for (const p of POS) if (a[0] === 'all' || p === a[0] || (V.spr[p] && V.spr[p].c === a[0])) V.spr[p] = null; break;
+    }
+  }
+  return V;
+}
+let toastT = null;
+function toast(msg) {
+  const el = $('#toast'); if (!el) return;
+  el.textContent = msg; el.style.opacity = 1;
+  clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = 0; }, 4500);
+}
+
 function packSave() {
   const line = S.history[S.history.length - 1];
-  return { chapter: S.chapter, idx: lastBlock.idx, flags: lastBlock.flags, V: lastBlock.V,
+  return { v: 2, chapter: S.chapter, idx: lastBlock.idx, anchor: makeAnchor(cur, lastBlock.idx), flags: lastBlock.flags, V: lastBlock.V,
     history: S.history, time: Date.now(),
     label: chapterTitle(S.chapter), preview: line ? line.text.slice(0, 24) : '' };
 }
@@ -553,12 +664,17 @@ async function loadSave(slot) {
   if (!d) return;
   busy = true;
   try { cur = await loadChapter(d.chapter); } catch (e) { busy = false; alert('載入失敗：' + e.message); return; }
-  S = { chapter: d.chapter, idx: d.idx, flags: clone(d.flags), V: blankV(), history: clone(d.history || []) };
-  await withLoading([...assetsOfV(d.V), ...assetsOf(cur, d.idx, 30)], '讀取存檔');
+  const r = relocate(cur, d);                                       // 劇情改過的話，重新找回那一句的位置
+  const V = r.exact ? clone(d.V) : visualAt(cur, r.idx);
+  S = { chapter: d.chapter, idx: r.idx, flags: clone(d.flags), V: blankV(), history: clone(d.history || []) };
+  const lh = S.history[S.history.length - 1], at = cur.ops[r.idx];
+  if (!r.exact && lh && at && at.t === 'say' && lh.text === at.text) lh.key = S.chapter + ':' + r.idx;
+  await withLoading([...assetsOfV(V), ...assetsOf(cur, r.idx, 30)], '讀取存檔');
   busy = false;
   closePanel(); startPlay();
-  applyV(clone(d.V));
+  applyV(V);
   preload(nextChapterId(d.chapter));
+  if (!r.exact) toast(r.lost ? '劇情有更新，存檔的那一句已經被修改，已回到附近的位置。' : '劇情有更新，已自動找回你的進度。');
   run();
 }
 
