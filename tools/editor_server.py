@@ -19,7 +19,7 @@ import sys
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 CHAPTERS = ROOT / "chapters"
@@ -31,6 +31,9 @@ ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,40}$")
 ASSET_DIRS = ["bg", "cg", "chars", "bgm", "se", "voice"]
 ASSET_EXT = {".webp", ".png", ".jpg", ".jpeg", ".svg", ".gif", ".mp3", ".ogg", ".wav", ".m4a"}
 MAX_BODY = 2 * 1024 * 1024
+UPLOAD_MAX = 80 * 1024 * 1024                         # 單一音檔上限
+UPLOAD_DIRS = {"bgm", "se", "voice"}
+UPLOAD_EXT = {".mp3", ".ogg", ".wav", ".m4a"}
 
 
 class Server(ThreadingHTTPServer):
@@ -127,21 +130,82 @@ class Handler(SimpleHTTPRequestHandler):
         f.write_bytes(data)
         return self.send_json({"ok": True, "bytes": len(data)})
 
+    # ---- 匯入音檔 ----
+    def handle_upload(self):
+        try:
+            status, msg = handle_upload_impl(self)
+        except Exception as e:
+            return self.fail(500, f"伺服器錯誤：{e}")
+        return self.send_json({"ok": True, "name": msg} if status == 200 else {"error": msg}, status)
+
     # ---- POST ----
     def do_POST(self):
         if not self.host_ok() or self.headers.get("Origin", "") not in ALLOWED_ORIGINS:
             return self.fail(403, "forbidden")
-        if unquote(urlparse(self.path).path) != "/api/chars/sprite":
+        if urlparse(self.path).path == "/api/upload":
+            return self.handle_upload()
+        handlers = {
+            "/api/chars/sprite": register_sprite,
+            "/api/chars/add": add_character,
+            "/api/chapter/new": new_chapter,
+            "/api/chapters/save": save_chapters,
+        }
+        fn = handlers.get(unquote(urlparse(self.path).path))
+        if not fn:
             return self.fail(404, "unknown api")
         try:
             n = int(self.headers.get("Content-Length", "0"))
-            if n <= 0 or n > 4096:
+            if n <= 0 or n > 64 * 1024:
                 raise ValueError
             body = json.loads(self.rfile.read(n).decode("utf-8"))
         except Exception:
             return self.fail(400, "bad json")
-        status, msg = register_sprite(body)
+        try:
+            status, msg = fn(body)
+        except Exception as e:                                  # 不要讓一個壞請求把連線弄斷
+            return self.fail(500, f"伺服器錯誤：{e}")
         return self.send_json({"ok": True} if status == 200 else {"error": msg}, status)
+
+
+def handle_upload_impl(handler):
+    """把音檔存進 assets/bgm、se 或 voice。網址參數：dir、name；內容是檔案本身（二進位）"""
+    q = parse_qs(urlparse(handler.path).query)
+    d = (q.get("dir") or [""])[0]
+    name = (q.get("name") or [""])[0]
+    if d not in UPLOAD_DIRS:
+        return 400, "不支援的資料夾"
+    name = Path(name.replace("\\", "/")).name                    # 只留檔名，去掉任何路徑
+    stem, ext = Path(name).stem, Path(name).suffix.lower()
+    if not name or name.startswith(".") or ext not in UPLOAD_EXT:
+        return 400, "只能匯入 mp3 / ogg / wav / m4a 音訊檔"
+    if not re.match(r"^[^<>:\"/\\|?*\x00-\x1f]{1,120}$", name):
+        return 400, "檔名含有不能使用的字元"
+    try:
+        n = int(handler.headers.get("Content-Length", "0"))
+    except ValueError:
+        return 400, "bad length"
+    if n <= 0:
+        return 400, "檔案是空的"
+    if n > UPLOAD_MAX:
+        return 413, f"檔案太大（上限 {UPLOAD_MAX // 1024 // 1024} MB）"
+    target = ROOT / "assets" / d / (stem + ext)
+    if target.exists():
+        return 409, f"assets/{d}/ 裡已經有「{target.name}」了，請先改檔名再匯入"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    left, tmp = n, target.with_name(target.name + ".part")
+    try:
+        with tmp.open("wb") as f:
+            while left > 0:
+                chunk = handler.rfile.read(min(left, 1024 * 256))
+                if not chunk:
+                    raise IOError("連線中斷")
+                f.write(chunk)
+                left -= len(chunk)
+        tmp.replace(target)
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        return 500, f"寫入失敗：{e}"
+    return 200, target.name
 
 
 def register_sprite(body):
@@ -165,6 +229,92 @@ def register_sprite(body):
     nl = "\r\n" if b"\r\n" in raw else "\n"
     text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     f.write_bytes(text.replace("\n", nl).encode("utf-8"))
+    return 200, "ok"
+
+
+def read_json_file(f):
+    raw = f.read_bytes()
+    return json.loads(raw.decode("utf-8")), raw
+
+
+def write_json_file(f, data, raw_old):
+    """備份舊檔後寫入，沿用原檔的換行格式"""
+    BACKUPS.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(f, BACKUPS / f"{f.stem}_{time.strftime('%Y%m%d_%H%M%S')}{f.suffix}")
+    nl = "\r\n" if b"\r\n" in raw_old else "\n"
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    f.write_bytes(text.replace("\n", nl).encode("utf-8"))
+
+
+CHAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,29}$")
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def add_character(body):
+    """新增角色：id、顯示名稱、名字顏色（立繪之後再登記）"""
+    cid, name, color = body.get("id"), body.get("name"), body.get("color", "#ffffff")
+    if not all(isinstance(x, str) for x in (cid, name, color)):
+        return 400, "參數錯誤"
+    name = name.strip()
+    if not CHAR_ID_RE.match(cid):
+        return 400, "角色 id 只能用英文字母、數字、底線，並以英文字母開頭（最多 30 字）"
+    if not name or len(name) > 12 or "：" in name or ":" in name:
+        return 400, "名稱不可空白、不可超過 12 字、不可含冒號（劇情用「名稱：台詞」辨識說話者）"
+    if not COLOR_RE.match(color):
+        return 400, "顏色格式要像 #ffd6a5"
+    f = ROOT / "chars.json"
+    data, raw = read_json_file(f)
+    if cid in data:
+        return 400, "已經有這個角色 id 了"
+    if any(v.get("name") == name for v in data.values()):
+        return 400, "已經有同名的角色了"
+    data[cid] = {"name": name, "color": color.lower(), "sprites": {}}
+    write_json_file(f, data, raw)
+    return 200, "ok"
+
+
+def new_chapter(body):
+    """新增章節檔（附簡單的開頭範本），並加到 chapters/index.json 的最後面"""
+    cid, title = body.get("id"), body.get("title")
+    if not isinstance(cid, str) or not isinstance(title, str):
+        return 400, "參數錯誤"
+    title = title.strip()
+    if not ID_RE.match(cid) or not re.match(r"^[A-Za-z]", cid):
+        return 400, "章節 id 只能用英文字母、數字、底線、連字號，並以英文字母開頭，例如 ch3"
+    if not title or len(title) > 40 or "\n" in title:
+        return 400, "章節標題不可空白，且不超過 40 字"
+    f = CHAPTERS / f"{cid}.txt"
+    if f.exists():
+        return 400, "這個章節檔已經存在"
+    idx = CHAPTERS / "index.json"
+    data, raw = read_json_file(idx)
+    if any(c.get("id") == cid for c in data.get("chapters", [])):
+        return 400, "章節清單裡已經有這個 id 了"
+    f.write_text(f"# {title}\n@title {title}\n\n", encoding="utf-8", newline="")
+    data.setdefault("chapters", []).append({"id": cid, "title": title})
+    write_json_file(idx, data, raw)
+    return 200, "ok"
+
+
+def save_chapters(body):
+    """調整章節順序與標題。只允許「換順序、改標題」，章節清單的 id 必須和現有的完全一樣"""
+    items = body.get("chapters")
+    if not isinstance(items, list):
+        return 400, "參數錯誤"
+    idx = CHAPTERS / "index.json"
+    data, raw = read_json_file(idx)
+    old_ids = [c.get("id") for c in data.get("chapters", [])]
+    new_ids = [c.get("id") for c in items if isinstance(c, dict)]
+    if sorted(map(str, new_ids)) != sorted(map(str, old_ids)):
+        return 400, "章節清單和現有的不一致（本功能只能調整順序與標題，不能新增或刪除章節）"
+    clean = []
+    for c in items:
+        title = c.get("title")
+        if not isinstance(title, str) or not title.strip() or len(title) > 40 or "\n" in title:
+            return 400, "章節標題不可空白，且不超過 40 字"
+        clean.append({"id": c["id"], "title": title.strip()})
+    data["chapters"] = clean
+    write_json_file(idx, data, raw)
     return 200, "ok"
 
 

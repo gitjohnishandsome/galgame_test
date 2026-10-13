@@ -67,3 +67,28 @@ section:last-child{border-right:none}
 .row .nm{flex:1;min-width:0;word-break:break-all;font-size:12px}
 .row button{padding:2px 8px;font-size:12px}
 .empty{color:var(--muted);padding:20px 4px}
+
+header .sep{width:1px;height:22px;background:var(--line)}
+#toolbar{display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:#141a28}
+#toolbar button{padding:2px 10px;font-size:12px}
+.ln.editing{background:#2a3350;border-left-color:var(--warn);align-items:center;padding:6px 8px}
+.ln .ed{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ln .ed select{max-width:110px}
+.ln .ed input[type=text]{flex:1;min-width:140px;font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--accent);border-radius:6px;padding:4px 8px}
+.ln .ed .cnt{font-size:11px;color:var(--muted)}
+.ln .ed .cnt.over{color:var(--warn)}
+.ln .ed button{padding:2px 10px;font-size:12px}
+.form-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+.form-row input[type=text]{font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:110px}
+.form-row input[type=color]{width:34px;height:28px;padding:0;border:1px solid var(--line);border-radius:6px;background:none}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50}
+#modal[hidden]{display:none}
+#modal .box{width:min(560px,92vw);max-height:80vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 20px}
+#modal h3{margin:0 0 6px}
+#ch-list .row{gap:6px}
+#ch-list .row .id{flex:none;width:70px;color:var(--muted);font-family:Consolas,monospace;font-size:12px}
+#ch-list .row input{flex:1;min-width:0;font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+#modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.ln.editing{height:auto!important;cursor:default}
+#assets.drop{outline:2px dashed var(--accent);outline-offset:-6px;background:#16213a}
+.row.import{border-style:dashed}

@@ -10,6 +10,7 @@ const url = (dir, name) => DIRS[dir] + name.split('/').map(encodeURIComponent).j
 let cfg, chars = {}, assets = {};
 let chapterId = null, lines = [], trailingNL = true, savedText = '';
 let sel = 0, tab = 'bg', pvReady = false;
+let editIdx = null, editNew = false;     // 正在編輯的那一行（editNew = 剛新增、還沒填內容）
 const undoStack = [];
 let kinds = [];
 
@@ -85,6 +86,7 @@ function mutate(fn) {
 function undo() {
   const u = undoStack.pop();
   if (!u) return;
+  editIdx = null; editNew = false;
   lines = u.lines; sel = Math.min(u.sel, lines.length - 1);
   classify(); renderAll();
 }
@@ -153,6 +155,77 @@ function updateDirty() {
   $('#btn-undo').disabled = !undoStack.length;
 }
 
+// ---------- 編輯台詞文字 ----------
+function startEdit(i) {
+  if (i == null || i < 0 || i >= lines.length || kinds[i] === 'blank') return;
+  editIdx = i; editNew = false; sel = i; renderAll();
+}
+function cancelEdit() {
+  if (editIdx == null) return;
+  const wasNew = editNew;
+  editIdx = null; editNew = false;
+  if (wasNew) undo(); else renderAll();     // 新增到一半取消 → 整個還原
+}
+function commitEdit(i, text) {
+  text = text.replace(/[\r\n]+/g, ' ');
+  const wasNew = editNew;
+  editIdx = null; editNew = false;
+  if (wasNew && !text.replace(/^[^：:]{1,12}[：:]/, '').trim()) { undo(); return; }   // 新增但沒填字 → 當作取消
+  if (text === lines[i]) { classify(); renderAll(); return; }
+  if (wasNew) { lines[i] = text; classify(); renderAll(); }                         // 新增的行：復原一次就整個消失
+  else mutate(() => { lines[i] = text; });
+}
+function editorFor(i) {
+  const k = kinds[i], wrap = document.createElement('div'); wrap.className = 'ed';
+  const inp = document.createElement('input'); inp.type = 'text';
+  let sp = null, cnt = null;
+  const compose = () => (sp && sp.value ? `${sp.value}：${inp.value}` : inp.value);
+  if (k === 'say' || (k === 'blank' && editNew)) {
+    const s = sayInfo(lines[i] || '');
+    sp = document.createElement('select');
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '旁白'; sp.appendChild(o0);
+    Object.keys(chars).forEach(key => { const o = document.createElement('option'); o.value = key; o.textContent = chars[key].name; sp.appendChild(o); });
+    sp.value = s.who || '';
+    inp.value = s.text; inp.placeholder = '台詞（一行最多約 50 字）';
+    cnt = document.createElement('span'); cnt.className = 'cnt';
+    const upd = () => { const n = inp.value.length; cnt.textContent = n + ' 字'; cnt.classList.toggle('over', n > 50); cnt.title = n > 50 ? '超過約 50 字，對話框可能放不下，建議拆成兩句' : ''; };
+    inp.oninput = upd; upd();
+    wrap.append(sp, inp, cnt);
+  } else {
+    inp.value = lines[i]; inp.placeholder = '指令或文字';
+    wrap.append(inp);
+  }
+  const ok = document.createElement('button'); ok.textContent = '確定'; ok.onclick = () => commitEdit(i, compose());
+  const no = document.createElement('button'); no.textContent = '取消'; no.onclick = cancelEdit;
+  wrap.append(ok, no);
+  inp.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commitEdit(i, compose()); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+  };
+  return wrap;
+}
+// 在選取的那一行後面新增一句台詞（預設沿用目前這句的說話者）
+function addSay() {
+  if (editIdx != null) return;
+  const j = displayIndex(sel);
+  const cur = j < lines.length && kinds[j] === 'say' ? sayInfo(lines[j]) : { who: null };
+  const at = Math.min(lines.length, sel + 1);
+  undoStack.push({ lines: lines.slice(), sel });
+  lines.splice(at, 0, cur.who ? `${cur.who}：` : '');
+  classify(); sel = at; editIdx = at; editNew = true; renderAll();
+}
+function deleteSelected() {
+  if (editIdx != null || !lines.length) return;
+  mutate(() => { lines.splice(sel, 1); sel = Math.max(0, Math.min(sel, lines.length - 1)); });
+}
+function moveSelected(d) {
+  if (editIdx != null) return;
+  const to = sel + d;
+  if (to < 0 || to >= lines.length) return;
+  mutate(() => { [lines[sel], lines[to]] = [lines[to], lines[sel]]; sel = to; });
+}
+
 function renderLines() {
   const box = $('#lines'), keepTop = box.scrollTop;
   box.textContent = '';
@@ -161,8 +234,9 @@ function renderLines() {
     const k = kinds[i];
     const row = document.createElement('div');
     row.className = 'ln ' + (k === 'choiceStart' || k === 'choiceEnd' || k === 'opt' ? 'choice' : k) + (i === sel ? ' sel' : '') + (i === j ? ' disp' : '');
-    if (k === 'blank') { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
+    if (k === 'blank' && i !== editIdx) { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
     const no = document.createElement('span'); no.className = 'no'; no.textContent = i + 1;
+    if (i === editIdx) { row.className += ' editing'; row.append(no, editorFor(i)); box.appendChild(row); return; }
     const body = document.createElement('span'); body.className = 'body';
     if (k === 'say') {
       const s = sayInfo(l);
@@ -176,11 +250,14 @@ function renderLines() {
       row.appendChild(d);
     }
     row.onclick = () => { sel = i; renderAll(); };
+    row.ondblclick = () => startEdit(i);
     box.appendChild(row);
   });
   box.scrollTop = keepTop;
-  const el = box.querySelector('.ln.sel') || box.querySelector('.ln.disp');
+  const el = box.querySelector('.ln.editing') || box.querySelector('.ln.sel') || box.querySelector('.ln.disp');
   if (el) el.scrollIntoView({ block: 'nearest' });
+  const inp = box.querySelector('.ln.editing input[type=text]');
+  if (inp && document.activeElement !== inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
 function chip(label, value, actions) {
@@ -321,8 +398,10 @@ function renderAssets() {
       loose.forEach(a => g.appendChild(looseCard(a, keys)));
       box.append(t, g);
     } else if (!any) box.innerHTML = '<div class="empty">assets/chars 裡還沒有立繪圖片。<br>把 PNG 放進去，這裡就會出現，可以直接登記。</div>';
+    box.appendChild(newCharForm());
   } else {
     const dir = tab, list = assets[dir] || [];
+    box.appendChild(importBar(dir));
     if (dir === 'bgm') {
       const off = document.createElement('div'); off.className = 'row';
       off.innerHTML = '<span class="nm">停止音樂（@bgm off）</span>';
@@ -341,6 +420,30 @@ function renderAssets() {
   box.scrollTop = top;
 }
 
+function reloadPreview() { pvReady = false; $('#pv').src = '/index.html?editor=1&t=' + Date.now(); }   // 預覽要重新載入才讀得到新的 chars.json
+
+// 新增角色：id、名稱、名字顏色
+function newCharForm() {
+  const box = document.createElement('div');
+  const t = document.createElement('div'); t.className = 'group-title'; t.textContent = '＋新增角色';
+  const r = document.createElement('div'); r.className = 'form-row';
+  const id = document.createElement('input'); id.type = 'text'; id.placeholder = '角色 id（英文）'; id.title = '劇情與設定檔用的代號，只能英文字母、數字、底線，例如 mika';
+  const nm = document.createElement('input'); nm.type = 'text'; nm.placeholder = '顯示名稱'; nm.maxLength = 12; nm.title = '對話框上顯示的名字（最多 12 字、不可含冒號）';
+  const col = document.createElement('input'); col.type = 'color'; col.value = '#ffd6a5'; col.title = '名字的顏色';
+  const b = document.createElement('button'); b.textContent = '新增';
+  b.onclick = async () => {
+    try {
+      await api('/api/chars/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id.value.trim(), name: nm.value, color: col.value }) });
+      chars = await api('/chars.json'); reloadPreview();
+      status(`已新增角色：${nm.value}`, 'ok'); renderAll();
+    } catch (e) { status('新增角色失敗：' + e.message, 'err'); alert('新增角色失敗：' + e.message); }
+  };
+  r.append(id, nm, col, b);
+  const hint = document.createElement('div'); hint.className = 'muted'; hint.textContent = '新增後，到上面「尚未登記的立繪檔案」就能替這個角色登記立繪；寫台詞時也能選這個說話者。';
+  box.append(t, r, hint);
+  return box;
+}
+
 // 尚未登記的立繪：選角色 + 表情名稱，寫進 chars.json
 function looseCard(a, keys) {
   const c = imgCard('chars', a.name, a.size, [['', () => {}]], null, true);
@@ -353,7 +456,7 @@ function looseCard(a, keys) {
     try {
       await api('/api/chars/sprite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ char: sel.value, expr: inp.value, file: a.name }) });
       chars = await api('/chars.json'); assets = await api('/api/assets');
-      pvReady = false; $('#pv').src = '/index.html?editor=1&t=' + Date.now();   // 預覽要重新載入才讀得到新的 chars.json
+      reloadPreview();
       status(`已登記：${chars[sel.value].name} / ${inp.value}`, 'ok'); renderAll();
     } catch (e) { status('登記失敗：' + e.message, 'err'); alert('登記失敗：' + e.message); }
   };
@@ -361,6 +464,47 @@ function looseCard(a, keys) {
   acts.append(sel, inp, btn); c.appendChild(acts);
   return c;
 }
+
+// ---------- 匯入音訊 ----------
+const AUDIO_RE = /\.(mp3|ogg|wav|m4a)$/i;
+async function uploadAudio(dir, files) {
+  const list = [...files].filter(f => AUDIO_RE.test(f.name));
+  if (!list.length) { status('請選擇 mp3 / ogg / wav / m4a 音訊檔', 'err'); alert('請選擇 mp3 / ogg / wav / m4a 音訊檔'); return; }
+  let ok = 0; const errs = [];
+  for (const f of list) {
+    status(`匯入中：${f.name}（${(f.size / 1024 / 1024).toFixed(1)} MB）…`);
+    try {
+      await api(`/api/upload?dir=${dir}&name=${encodeURIComponent(f.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+      ok++;
+      if (dir === 'bgm' && f.size > 5 * 1024 * 1024) errs.push(`「${f.name}」有 ${(f.size / 1024 / 1024).toFixed(1)} MB，偏大，建議壓成 128kbps 的 MP3，可以加快載入`);
+    } catch (e) { errs.push(`「${f.name}」匯入失敗：${e.message}`); }
+  }
+  assets = await api('/api/assets');
+  renderAssets();
+  status(`已匯入 ${ok} 個檔案` + (errs.length ? '（有提醒）' : ''), errs.some(m => m.includes('失敗')) ? 'err' : 'ok');
+  if (errs.length) alert(errs.join('\n'));
+}
+function importBar(dir) {
+  const bar = document.createElement('div'); bar.className = 'row import';
+  const lb = document.createElement('span'); lb.className = 'nm';
+  lb.textContent = `匯入新的${dir === 'bgm' ? '音樂' : dir === 'se' ? '音效' : '語音'}（選檔案，或把檔案拖進這一欄）`;
+  const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = '.mp3,.ogg,.wav,.m4a,audio/*'; inp.hidden = true;
+  inp.onchange = () => { const fs = [...inp.files]; inp.value = ''; if (fs.length) uploadAudio(dir, fs); };
+  const b = document.createElement('button'); b.textContent = '＋匯入'; b.onclick = () => inp.click();
+  bar.append(lb, b, inp);
+  return bar;
+}
+(() => {
+  const box = $('#assets');
+  box.addEventListener('dragover', e => { if (tab === 'bgm' || tab === 'se') { e.preventDefault(); box.classList.add('drop'); } });
+  box.addEventListener('dragleave', () => box.classList.remove('drop'));
+  box.addEventListener('drop', e => {
+    box.classList.remove('drop');
+    if (tab !== 'bgm' && tab !== 'se') return;
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files.length) uploadAudio(tab, e.dataTransfer.files);
+  });
+})();
 
 // ---------- 載入 / 儲存 ----------
 function status(msg, cls) { const s = $('#status'); s.textContent = msg; s.className = cls || ''; }
@@ -372,7 +516,7 @@ async function api(path, opt) {
 }
 async function openChapter(id) {
   const d = await api('/api/chapter/' + encodeURIComponent(id));
-  chapterId = id;
+  chapterId = id; editIdx = null; editNew = false;
   const text = d.text.replace(/\r\n/g, '\n');
   trailingNL = text.endsWith('\n');
   lines = (trailingNL ? text.slice(0, -1) : text).split('\n');
@@ -392,7 +536,62 @@ async function save() {
   } catch (e) { status('儲存失敗：' + e.message, 'err'); alert('儲存失敗：' + e.message); }
 }
 
+// ---------- 章節：新增 / 管理 ----------
+function fillChapterSelect() {
+  const s = $('#chapter'); s.textContent = '';
+  cfg.chapters.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.id}　${c.title}`; s.appendChild(o); });
+  if (chapterId) s.value = chapterId;
+}
+async function newChapter() {
+  if (isDirty() && !confirm('目前的修改還沒有儲存，確定要離開這個章節去新增嗎？（未存的修改會消失）')) return;
+  const used = new Set(cfg.chapters.map(c => c.id));
+  let n = cfg.chapters.length; while (used.has('ch' + n)) n++;
+  const id = prompt('新章節的 id（英文字母開頭，可含數字、底線、連字號，例如 ch3）：', 'ch' + n);
+  if (!id) return;
+  const title = prompt('新章節的標題：', '第 ' + n + ' 章');
+  if (!title) return;
+  try {
+    await api('/api/chapter/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id.trim(), title }) });
+    cfg = await api('/chapters/index.json');
+    await openChapter(id.trim());
+    fillChapterSelect();
+    status(`已建立章節 ${id.trim()}`, 'ok');
+  } catch (e) { status('新增章節失敗：' + e.message, 'err'); alert('新增章節失敗：' + e.message); }
+}
+function openChapterManager() {
+  const list = cfg.chapters.map(c => ({ id: c.id, title: c.title }));
+  const box = $('#ch-list');
+  const draw = () => {
+    box.textContent = '';
+    list.forEach((c, i) => {
+      const r = document.createElement('div'); r.className = 'row';
+      const id = document.createElement('span'); id.className = 'id'; id.textContent = c.id;
+      const inp = document.createElement('input'); inp.value = c.title; inp.oninput = () => { c.title = inp.value; };
+      const up = document.createElement('button'); up.textContent = '↑'; up.disabled = i === 0; up.onclick = () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); };
+      const dn = document.createElement('button'); dn.textContent = '↓'; dn.disabled = i === list.length - 1; dn.onclick = () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; draw(); };
+      r.append(id, inp, up, dn); box.appendChild(r);
+    });
+  };
+  draw();
+  $('#ch-save').onclick = async () => {
+    try {
+      await api('/api/chapters/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chapters: list }) });
+      cfg = await api('/chapters/index.json'); fillChapterSelect();
+      $('#modal').hidden = true; status('章節順序與標題已儲存', 'ok');
+    } catch (e) { alert('儲存失敗：' + e.message); }
+  };
+  $('#ch-cancel').onclick = () => { $('#modal').hidden = true; };
+  $('#modal').hidden = false;
+}
+
 // ---------- 事件 ----------
+$('#btn-edit').onclick = () => startEdit(sel);
+$('#btn-add').onclick = addSay;
+$('#btn-del').onclick = deleteSelected;
+$('#btn-up').onclick = () => moveSelected(-1);
+$('#btn-down').onclick = () => moveSelected(1);
+$('#btn-newch').onclick = newChapter;
+$('#btn-chs').onclick = openChapterManager;
 $('#btn-save').onclick = save;
 $('#btn-undo').onclick = undo;
 $('#chapter').onchange = async e => {
@@ -404,6 +603,7 @@ addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
   if (['SELECT', 'INPUT', 'TEXTAREA'].includes((e.target || {}).tagName)) return;
+  if ((e.key === 'Enter' && e.target.tagName !== 'BUTTON') || e.key === 'F2') { e.preventDefault(); startEdit(sel); return; }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     const d = e.key === 'ArrowDown' ? 1 : -1;
@@ -420,8 +620,7 @@ addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.r
     chars = await api('/chars.json');
     assets = await api('/api/assets');
   } catch (e) { status('初始化失敗：' + e.message + '（請用「啟動編輯器.bat」開啟）', 'err'); return; }
-  const sel$ = $('#chapter');
-  cfg.chapters.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.id}　${c.title}`; sel$.appendChild(o); });
+  fillChapterSelect();
   $('#pv').src = '/index.html?editor=1';
   renderTabs();
   try { await openChapter(cfg.chapters[0].id); } catch (e) { status('載入失敗：' + e.message, 'err'); }

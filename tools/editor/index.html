@@ -12,6 +12,9 @@
   <label>章節 <select id="chapter"></select></label>
   <button id="btn-save" title="Ctrl+S">儲存</button>
   <button id="btn-undo" title="Ctrl+Z">復原</button>
+  <span class="sep"></span>
+  <button id="btn-newch" title="新增一個章節檔">＋新增章節</button>
+  <button id="btn-chs" title="調整章節順序與標題">章節管理</button>
   <span id="status"></span>
   <span class="grow"></span>
   <span class="hint">點左邊的一行 → 中間預覽那一句的畫面 → 點右邊的素材套用到這一句</span>
@@ -19,7 +22,14 @@
 
 <main>
   <section id="col-script">
-    <div class="col-title">劇情（點選一行）</div>
+    <div class="col-title">劇情（點選一行，雙擊編輯文字）</div>
+    <div id="toolbar">
+      <button id="btn-edit" title="編輯選取的那一行（Enter 或 F2）">編輯</button>
+      <button id="btn-add" title="在選取的那一行後面新增一句台詞">＋台詞</button>
+      <button id="btn-del" title="刪除選取的那一行">刪除</button>
+      <button id="btn-up" title="這一行往上移">↑</button>
+      <button id="btn-down" title="這一行往下移">↓</button>
+    </div>
     <div id="lines"></div>
   </section>
 
@@ -43,6 +53,15 @@
     <div id="assets"></div>
   </section>
 </main>
+
+<div id="modal" hidden>
+  <div class="box">
+    <h3>章節管理</h3>
+    <p class="muted">調整章節順序（遊戲會依這個順序播放）與標題。這裡不能刪除章節。</p>
+    <div id="ch-list"></div>
+    <div class="btns"><button id="ch-save">儲存</button><button id="ch-cancel">取消</button></div>
+  </div>
+</div>
 
 <script src="editor.js"></script>
 </body>
