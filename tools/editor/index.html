@@ -15,6 +15,9 @@
   <span class="sep"></span>
   <button id="btn-newch" title="新增一個章節檔">＋新增章節</button>
   <button id="btn-chs" title="調整章節順序與標題">章節管理</button>
+  <span class="sep"></span>
+  <button id="btn-play" title="從選取的這一句開始，用真正的遊戲試玩（含選項、轉場、音樂）">▶ 從這一句試玩</button>
+  <button id="btn-outline" title="整章的段落與分支一覽">結構總覽</button>
   <span id="status"></span>
   <span class="grow"></span>
   <span class="hint">點左邊的一行 → 中間預覽那一句的畫面 → 點右邊的素材套用到這一句</span>
@@ -64,6 +67,31 @@
     <div id="assets"></div>
   </section>
 </main>
+
+<div id="play-modal" hidden>
+  <div class="play-box">
+    <div class="play-head">
+      <strong id="play-title"></strong>
+      <label>初始旗標 <input id="play-flags" type="text" placeholder="例如 trust=1, love=2（可留空）"></label>
+      <button id="play-restart">⟲ 重新開始</button>
+      <button id="play-close">關閉（Esc）</button>
+    </div>
+    <div id="play-end" class="muted"></div>
+    <div id="play-wrap"><iframe id="play-frame" title="試玩" allow="autoplay"></iframe></div>
+    <div class="muted">這是真正的遊戲：可以點選項、聽音樂、看轉場。試玩用的是目前編輯器裡的內容（<b>不用先存檔</b>），不會寫入任何存檔或結局記錄。</div>
+  </div>
+</div>
+
+<div id="outline-modal" hidden>
+  <div class="outline-box">
+    <div class="play-head"><strong>劇情結構總覽</strong><span id="outline-info" class="muted"></span><span class="grow"></span><button id="outline-close">關閉（Esc）</button></div>
+    <div class="legend">
+      <span style="color:#d9a6ff">━ 選項</span><span style="color:#9aa6c0">━ 跳轉</span><span style="color:#ffb86b">┅ 條件</span><span style="color:#6b7690">┅ 自然接下去</span>
+      <span style="color:#6fd6a0">▢ 綠框 = 有結局</span><span style="color:#ff9a9a">▢ 紅虛線 = 沒人跳到</span><span style="color:#7aa7ff">▢ 藍框 = 目前選取的段落</span>
+    </div>
+    <div id="outline-body"></div>
+  </div>
+</div>
 
 <div id="edit-modal" hidden>
   <div class="box"></div>

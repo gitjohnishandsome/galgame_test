@@ -127,3 +127,20 @@ header .sep{width:1px;height:22px;background:var(--line)}
 #edit-modal .msg-err{color:#ff7b7b;font-size:13px;min-height:18px}
 #toolbar{flex-wrap:wrap}
 #toolbar button,#toolbar select{white-space:nowrap}
+
+/* 試玩視窗與結構總覽 */
+#play-modal,#outline-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:70}
+#play-modal[hidden],#outline-modal[hidden]{display:none}
+.play-box{display:flex;flex-direction:column;gap:6px;align-items:center;max-height:98vh}
+.play-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;width:100%}
+.play-head input{font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--line);border-radius:6px;padding:3px 8px;width:260px}
+#play-wrap{position:relative;overflow:hidden;background:#000;border:1px solid var(--line)}
+#play-frame{position:absolute;left:0;top:0;width:1216px;height:832px;border:0;transform-origin:0 0}
+.outline-box{width:min(96vw,1500px);height:90vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.outline-box .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px}
+#outline-body{flex:1;overflow:auto;background:#0b0e16;border:1px solid var(--line);border-radius:8px}
+#outline-body svg text{font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;pointer-events:none}
+
+header{overflow-x:auto;overflow-y:hidden}
+header button,header label,header strong,header select{white-space:nowrap}
+@media (max-width:1500px){header .hint{display:none}}

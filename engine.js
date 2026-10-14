@@ -3,10 +3,12 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const P = 'gal_';
+// 場景編輯器的「從這一句試玩」：用真正的遊戲播放，但不會寫入存檔、已讀、結局等記錄
+const PLAYTEST = new URLSearchParams(location.search).has('playtest');
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(P + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} },
-  del(k) { try { localStorage.removeItem(P + k); } catch (e) {} }
+  set(k, v) { if (PLAYTEST) return; try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { if (PLAYTEST) return; try { localStorage.removeItem(P + k); } catch (e) {} }
 };
 const clone = o => JSON.parse(JSON.stringify(o));
 const DIR = { bg: 'assets/bg/', cg: 'assets/cg/', chars: 'assets/chars/', bgm: 'assets/bgm/', se: 'assets/se/', voice: 'assets/voice/' };
@@ -52,7 +54,7 @@ function parse(text) {
     if (line[0] === '@') {
       const m = line.match(/^@(\w+)\s*(.*)$/);
       if (!m) continue;
-      const cmd = m[1], arg = m[2].trim();
+      const cmd = m[1], arg = m[2].trim(), li = i;
       if (cmd === 'choice') {
         const opts = [];
         while (++i < lines.length) {
@@ -61,16 +63,16 @@ function parse(text) {
           const o = l.match(/^-\s*(.+?)\s*->\s*(\S+)$/);
           if (o) opts.push({ text: o[1], target: o[2] });
         }
-        ops.push({ t: 'choice', opts });
-      } else ops.push({ t: cmd, arg });
+        ops.push({ t: 'choice', opts, line: li });
+      } else ops.push({ t: cmd, arg, line: li });
       continue;
     }
     const d = line.match(/^([^：:]{1,12})[：:]\s*(.*)$/);
     if (d) {
       const key = Object.keys(chars).find(k => k === d[1] || chars[k].name === d[1]);
-      if (key) { ops.push({ t: 'say', who: key, text: d[2] }); continue; }
+      if (key) { ops.push({ t: 'say', who: key, text: d[2], line: i }); continue; }
     }
-    ops.push({ t: 'say', who: null, text: line });
+    ops.push({ t: 'say', who: null, text: line, line: i });
   }
   return { ops, labels };
 }
@@ -796,6 +798,7 @@ function alignTitle() {
 addEventListener('resize', () => requestAnimationFrame(alignTitle));
 
 function toTitle() {
+  if (PLAYTEST) { try { parent.postMessage({ type: 'done' }, location.origin); } catch (e) {} return; }
   waiting = null; skipMode = false; syncSkipBtn(); closePanel();
   el.menubar.style.display = 'none'; el.box.style.display = 'none';
   el.choices.style.display = 'none'; el.banner.style.display = 'none';
@@ -972,6 +975,26 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
+// ---------- 試玩模式（編輯器的「從這一句試玩」）----------
+// 編輯器傳來 {type:'playtest', chapter, text, line, V, flags}：用「還沒存檔的」章節文字，從第 line 行開始播
+if (PLAYTEST) addEventListener('message', async e => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== 'playtest' || !chars) return;
+  const m = e.data;
+  cache[m.chapter] = parse(m.text);
+  cur = cache[m.chapter];
+  const ops = cur.ops;
+  let idx = ops.findIndex(o => o.line >= m.line && isBlock(o));
+  if (idx < 0) idx = ops.findIndex(o => o.line >= m.line);
+  if (idx < 0) idx = ops.length;
+  const V = m.V || blankV();
+  S = { chapter: m.chapter, idx, flags: m.flags || {}, V: blankV(), history: [] };
+  busy = true;
+  await withLoading([...assetsOfV(V), ...assetsOf(cur, idx, 30)], '載入試玩');
+  busy = false;
+  closePanel(); startPlay(); applyV(V); lastBlock = null;
+  run();
+});
+
 // ---------- 場景編輯器預覽 ----------
 // 編輯器傳來 {type:'render', V, say:{who,text} | choice:[文字…]}，這裡只負責把畫面畫出來
 function previewRender(m) {
@@ -1014,6 +1037,13 @@ if (EDITOR) addEventListener('message', e => {
   if (cfg.titleLogo) { const lg = $('#game-logo'); lg.onload = fitTitleLogos; lg.src = DIR.bg + cfg.titleLogo; lg.hidden = false; $('#game-title').hidden = true; }
   setMute(muted);
   S = { chapter: null, idx: 0, flags: {}, V: blankV(), history: [] };   // 標題畫面階段也要有可用狀態
+  if (PLAYTEST) {   // 試玩：不走標題畫面，等編輯器傳來要播的章節
+    document.body.classList.add('playtest');
+    el.title.classList.add('hidden');
+    if (loadingEl) loadingEl.style.display = 'none';
+    parent.postMessage({ type: 'ready' }, location.origin);
+    return;
+  }
   if (EDITOR) {   // 編輯器預覽：不走標題畫面與載入流程
     document.body.classList.add('editor');
     el.title.classList.add('hidden');

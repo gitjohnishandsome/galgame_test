@@ -874,6 +874,182 @@ function importBar(dir) {
   });
 })();
 
+// ---------- 從這一句試玩 ----------
+let playWin = null;
+function parseFlags(text) {
+  const f = {};
+  for (const part of text.split(/[,，;；\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\w+)=(.*)$/);
+    if (m) f[m[1]] = /^-?\d+(\.\d+)?$/.test(m[2]) ? Number(m[2]) : m[2];
+  }
+  return f;
+}
+function fitPlay() {
+  const wrap = $('#play-wrap'); if (!wrap) return;
+  const k = Math.min((innerWidth * 0.92) / 1216, (innerHeight - 175) / 832, 1);
+  $('#play-frame').style.transform = `scale(${k})`;
+  wrap.style.width = Math.round(1216 * k) + 'px'; wrap.style.height = Math.round(832 * k) + 'px';
+}
+function startPlaytest() {
+  if (editIdx != null) return;
+  const j = displayIndex(sel);
+  if (j >= lines.length) { alert('選取的這一行之後沒有台詞可以試玩。請先選一句台詞或選項。'); return; }
+  playLine = j;
+  const m = $('#play-modal'); m.hidden = false;
+  $('#play-title').textContent = `從第 ${j + 1} 行開始試玩（${chapterId}）：${(sayLabel(j) || lines[j]).slice(0, 24)}`;
+  $('#play-end').textContent = '';
+  fitPlay(); launchPlay();
+}
+let playLine = 0;
+function launchPlay() {
+  const f = $('#play-frame');
+  playWin = null;
+  f.src = '/index.html?playtest=1&t=' + Date.now();     // 重新載入 = 從頭開始，也會停掉上一次的音樂
+}
+function closePlaytest() {
+  $('#play-modal').hidden = true;
+  playWin = null;
+  $('#play-frame').src = 'about:blank';                 // 卸載遊戲，音樂就會停止
+}
+function onPlayReady(source) {
+  const j = playLine;
+  playWin = source;
+  source.postMessage({ type: 'playtest', chapter: chapterId, text: joinText(), line: j, V: stateAt(j), flags: parseFlags($('#play-flags').value) }, location.origin);
+}
+addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data) return;
+  const f = $('#play-frame');
+  if (f && e.source === f.contentWindow) {
+    if (e.data.type === 'ready') onPlayReady(e.source);
+    else if (e.data.type === 'done') $('#play-end').textContent = '試玩結束（劇情走到結尾）。可以按「重新開始」再試一次。';
+  }
+});
+$('#btn-play').onclick = startPlaytest;
+$('#play-restart').onclick = launchPlay;
+$('#play-close').onclick = closePlaytest;
+addEventListener('resize', fitPlay);
+addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#play-modal').hidden) { e.preventDefault(); closePlaytest(); } }, true);
+
+// ---------- 劇情結構總覽 ----------
+// 把章節切成「段落」（開頭 + 每個標籤一段），畫出段落之間怎麼連：選項、跳轉、條件、自然接下去、結局、換章節
+function buildGraph() {
+  const secs = [];
+  let cur = { name: '（開頭）', start: 0, label: null };
+  kinds.forEach((k, i) => { if (k === 'label') { cur.end = i - 1; secs.push(cur); cur = { name: labelName(lines[i]), start: i, label: i }; } });
+  cur.end = lines.length - 1; secs.push(cur);
+  const byName = {}; secs.forEach(s => { byName[s.name] = s; });
+  for (const s of secs) {
+    s.says = 0; s.first = -1; s.edges = []; s.ends = []; s.chapters = []; s.content = false; let last = -1;
+    for (let i = s.start; i <= s.end; i++) {
+      const k = kinds[i];
+      if (k === 'say') { s.says++; if (s.first < 0) s.first = i; }
+      if (k !== 'blank' && k !== 'comment' && k !== 'label') { s.content = true; last = i; }
+      if (k === 'opt') { const o = parseOpt(lines[i]); if (o) s.edges.push({ to: o.target, label: o.text, kind: 'choice', line: i }); }
+      else if (k === 'cmd') {
+        const c = parseCmd(lines[i]);
+        if (c.name === 'jump' && c.args[0]) s.edges.push({ to: c.args[0], label: '', kind: 'jump', line: i });
+        else if (c.name === 'if') { const f = parseIf(lines[i]); if (f) s.edges.push({ to: f.target, label: `${f.key} ${f.op} ${f.val}`, kind: 'if', line: i }); }
+        else if (c.name === 'chapter') s.chapters.push({ id: c.args[0], line: i });
+        else if (c.name === 'ending') s.ends.push({ name: c.args.join(' '), line: i });
+        else if (c.name === 'end') s.ends.push({ name: '結束', line: i });
+      }
+    }
+    if (s.first < 0) { for (let i = s.start; i <= s.end; i++) if (kinds[i] === 'choiceStart' || kinds[i] === 'cmd') { s.first = i; break; } }
+    s.terminal = last >= 0 && isTerminator(last);
+  }
+  // 自然接下去（上一段沒有跳走，直接讀下一段）
+  secs.forEach((s, n) => { if (n + 1 < secs.length && s.content && !s.terminal) s.edges.push({ to: secs[n + 1].name, label: '', kind: 'next', line: s.end }); });
+  return { secs: secs.filter((s, n) => s.content || n > 0), byName };
+}
+function showOutline() {
+  const { secs, byName } = buildGraph();
+  const W = 200, H = 70, GX = 110, GY = 26, PAD = 24;
+  const names = new Set(secs.map(s => s.name));
+  // 入度（用來標示「沒有人跳到」的段落）與 BFS 分層
+  const indeg = {}; secs.forEach(s => { indeg[s.name] = 0; });
+  secs.forEach(s => s.edges.forEach(e => { if (indeg[e.to] !== undefined) indeg[e.to]++; }));
+  const level = {}; const q = [];
+  const startName = secs[0] && secs[0].name;
+  if (startName) { level[startName] = 0; q.push(startName); }
+  while (q.length) {
+    const n = q.shift();
+    byName[n].edges.forEach(e => { if (names.has(e.to) && level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });
+  }
+  let maxL = Math.max(0, ...Object.values(level));
+  secs.forEach(s => { if (level[s.name] === undefined) level[s.name] = maxL + 1; });       // 沒連到的放最後一欄
+  const cols = {}; secs.forEach(s => { (cols[level[s.name]] = cols[level[s.name]] || []).push(s); });
+  const pos = {};
+  Object.keys(cols).map(Number).sort((a, b) => a - b).forEach(l => cols[l].forEach((s, r) => { pos[s.name] = { x: PAD + l * (W + GX), y: PAD + r * (H + GY) }; }));
+  // 找不到的目標，畫成紅色虛線的「缺少」節點
+  const missing = [...new Set(secs.flatMap(s => s.edges.map(e => e.to)).filter(t => !names.has(t) && !t.includes('/')))];
+  const lastCol = Math.max(...Object.keys(cols).map(Number), 0) + 1;
+  missing.forEach((n, r) => { pos['?' + n] = { x: PAD + lastCol * (W + GX), y: PAD + r * (H + GY) }; });
+  const widthN = Math.max(...Object.values(pos).map(p => p.x + W), 400) + PAD;
+  const heightN = Math.max(...Object.values(pos).map(p => p.y + H), 200) + PAD;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); Object.entries(attrs || {}).forEach(([k, v]) => e.setAttribute(k, v)); if (parent) parent.appendChild(e); return e; };
+  const svg = mk('svg', { width: widthN, height: heightN, viewBox: `0 0 ${widthN} ${heightN}` });
+  const defs = mk('defs', {}, svg);
+  [['choice', '#d9a6ff'], ['jump', '#9aa6c0'], ['if', '#ffb86b'], ['next', '#6b7690'], ['chap', '#6fd6a0']].forEach(([k, c]) => {
+    const mr = mk('marker', { id: 'ar-' + k, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+    mk('path', { d: 'M0,0 L10,5 L0,10 z', fill: c }, mr);
+  });
+  const COL = { choice: '#d9a6ff', jump: '#9aa6c0', if: '#ffb86b', next: '#6b7690' };
+  const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  const gEdges = mk('g', {}, svg), gNodes = mk('g', {}, svg);
+  let ci = 0;
+  secs.forEach(s => {
+    const a = pos[s.name];
+    s.edges.forEach(e => {
+      const bn = names.has(e.to) ? e.to : e.to.includes('/') ? null : '?' + e.to;
+      if (!bn) return;
+      const b = pos[bn]; if (!b) return;
+      const back = b.x <= a.x;
+      const sx = a.x + W, sy = a.y + H / 2 + (ci++ % 3 - 1) * 6, tx = b.x, ty = b.y + H / 2;
+      const d = back ? `M ${a.x + W / 2} ${a.y + H} C ${a.x + W / 2} ${a.y + H + 70}, ${b.x + W / 2} ${b.y + H + 70}, ${b.x + W / 2} ${b.y + H}`
+        : `M ${sx} ${sy} C ${sx + GX * 0.6} ${sy}, ${tx - GX * 0.6} ${ty}, ${tx} ${ty}`;
+      mk('path', { d, fill: 'none', stroke: COL[e.kind], 'stroke-width': e.kind === 'choice' ? 2.2 : 1.6, 'stroke-dasharray': e.kind === 'next' ? '5 4' : e.kind === 'if' ? '2 3' : '', 'marker-end': `url(#ar-${e.kind})`, opacity: .9 }, gEdges);
+      const label = e.label ? trunc(e.label, 12) : '';
+      if (label) {
+        const mx = back ? (a.x + b.x) / 2 + W / 2 : (sx + tx) / 2, my = back ? Math.max(a.y, b.y) + H + 52 : (sy + ty) / 2;
+        const w = label.length * 13 + 12;
+        mk('rect', { x: mx - w / 2, y: my - 11, width: w, height: 20, rx: 6, fill: '#10131c', stroke: COL[e.kind], 'stroke-width': .8 }, gEdges);
+        const tt = mk('text', { x: mx, y: my + 4, 'text-anchor': 'middle', 'font-size': 12, fill: COL[e.kind] }, gEdges); tt.textContent = label;
+      }
+    });
+  });
+  const dispS = displayIndex(sel);
+  secs.forEach(s => {
+    const p = pos[s.name];
+    const isCur = sel >= s.start && sel <= s.end;
+    const ending = s.ends.length > 0, orphan = s.name !== secs[0].name && indeg[s.name] === 0 && secs[0].name !== s.name && s.label !== null;
+    const g = mk('g', { transform: `translate(${p.x},${p.y})`, style: 'cursor:pointer' }, gNodes);
+    mk('rect', { width: W, height: H, rx: 10, fill: isCur ? '#243253' : '#171c29', stroke: isCur ? '#7aa7ff' : ending ? '#6fd6a0' : orphan ? '#ff9a9a' : '#2a3247', 'stroke-width': isCur ? 2.4 : 1.6, 'stroke-dasharray': orphan ? '5 4' : '' }, g);
+    const t1 = mk('text', { x: 12, y: 22, 'font-size': 14, 'font-weight': 700, fill: s.label === null ? '#ffb86b' : '#e8ecf5' }, g); t1.textContent = trunc(s.name, 16) + (s.label === null ? '' : '');
+    const first = s.first >= 0 && kinds[s.first] === 'say' ? sayLabel(s.first) : s.first >= 0 ? '（選項／指令）' : '（空）';
+    const t2 = mk('text', { x: 12, y: 42, 'font-size': 12, fill: '#8d97ad' }, g); t2.textContent = trunc(first, 15);
+    const badges = [`${s.says} 句`, ...s.ends.map(e => '🏁 ' + trunc(e.name, 6)), ...s.chapters.map(c => '→ ' + c.id), ...(orphan ? ['沒人跳到'] : [])].join('　');
+    const t3 = mk('text', { x: 12, y: 60, 'font-size': 11, fill: ending ? '#6fd6a0' : orphan ? '#ff9a9a' : '#6b7690' }, g); t3.textContent = trunc(badges, 22);
+    const tip = mk('title', {}, g); tip.textContent = `${s.name}（第 ${s.start + 1}–${s.end + 1} 行）\n${first}`;
+    g.onclick = () => { sel = s.first >= 0 ? s.first : s.start; $('#outline-modal').hidden = true; renderAll(); };
+  });
+  missing.forEach(n => {
+    const p = pos['?' + n];
+    const g = mk('g', { transform: `translate(${p.x},${p.y})` }, gNodes);
+    mk('rect', { width: W, height: H, rx: 10, fill: '#2a1518', stroke: '#ff7b7b', 'stroke-width': 1.6, 'stroke-dasharray': '5 4' }, g);
+    const t1 = mk('text', { x: 12, y: 28, 'font-size': 14, 'font-weight': 700, fill: '#ff9a9a' }, g); t1.textContent = '⚠ ' + trunc(n, 14);
+    const t2 = mk('text', { x: 12, y: 50, 'font-size': 12, fill: '#ff9a9a' }, g); t2.textContent = '找不到這個標籤';
+  });
+  const box = $('#outline-body'); box.textContent = ''; box.appendChild(svg);
+  const info = $('#outline-info');
+  info.textContent = `共 ${secs.length} 個段落。` + (missing.length ? `⚠ ${missing.length} 個跳轉目標找不到。` : '') + '點任何一個方塊，會跳到那一段的第一句。';
+  $('#outline-modal').hidden = false;
+}
+$('#btn-outline').onclick = showOutline;
+$('#outline-close').onclick = () => { $('#outline-modal').hidden = true; };
+addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#outline-modal').hidden) { e.preventDefault(); $('#outline-modal').hidden = true; } }, true);
+
 // ---------- 載入 / 儲存 ----------
 function status(msg, cls) { const s = $('#status'); s.textContent = msg; s.className = cls || ''; }
 async function api(path, opt) {

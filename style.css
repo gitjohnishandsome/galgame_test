@@ -128,3 +128,6 @@ body.editor #menubar,body.editor #btn-mute,body.editor #loading{display:none!imp
 #fx{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .4s}
 .bgghost{pointer-events:none}
 #toast{position:absolute;left:50%;top:18px;transform:translateX(-50%);z-index:26;max-width:80%;padding:8px 20px;border-radius:20px;background:rgba(15,25,50,.92);border:1px solid rgba(160,200,255,.6);font-size:22px;opacity:0;transition:opacity .4s;pointer-events:none;text-align:center}
+
+/* 試玩模式：不顯示存檔 / 讀檔 / 回標題（試玩不寫入任何記錄） */
+body.playtest [data-act=save],body.playtest [data-act=load],body.playtest [data-act=title]{display:none!important}
