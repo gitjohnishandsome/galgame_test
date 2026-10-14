@@ -10,6 +10,7 @@ const url = (dir, name) => DIRS[dir] + name.split('/').map(encodeURIComponent).j
 let cfg, chars = {}, assets = {};
 let chapterId = null, lines = [], trailingNL = true, savedText = '';
 let sel = 0, tab = 'bg', pvReady = false;
+const stateCache = new Map();          // 預覽用的畫面狀態快取（改劇情時清掉）
 let editIdx = null, editNew = false;     // 正在編輯的那一行（editNew = 剛新增、還沒填內容）
 const undoStack = [];
 let kinds = [];
@@ -29,6 +30,7 @@ function classify() {
     else k = 'say';
     kinds.push(k);
   }
+  stateCache.clear();
 }
 function parseCmd(line) {
   const m = line.trim().match(/^@(\w+)\s*(.*)$/);
@@ -70,12 +72,6 @@ function displayIndex(i) {
   for (let k = i; k < lines.length; k++) if (kinds[k] === 'say' || kinds[k] === 'choiceStart') return k;
   return lines.length;
 }
-function stateAt(j) {
-  const V = blankV();
-  for (let i = 0; i < j && i < lines.length; i++) if (kinds[i] === 'cmd') applyCmd(V, parseCmd(lines[i]));
-  return V;
-}
-
 // ---------- 修改劇情 ----------
 function mutate(fn) {
   undoStack.push({ lines: lines.slice(), sel });
@@ -149,12 +145,286 @@ const isDirty = () => joinText() !== savedText;
 const joinText = () => lines.join('\n') + (trailingNL ? '\n' : '');
 
 function renderAll() {
-  renderLines(); renderChips(); renderAssets(); sendPreview(); updateDirty();
+  renderLines(); renderRefBar(); renderChips(); renderAssets(); sendPreview(); updateDirty();
 }
 function updateDirty() {
   $('#btn-save').classList.toggle('dirty', isDirty());
   $('#btn-save').textContent = isDirty() ? '儲存（有未存的修改）' : '儲存';
   $('#btn-undo').disabled = !undoStack.length;
+}
+
+// ---------- 分支與流程：選項、標籤、跳轉、旗標 ----------
+const labelName = line => line.trim().slice(1).trim();
+function labelMap() { const m = {}; kinds.forEach((k, i) => { if (k === 'label') m[labelName(lines[i])] = i; }); return m; }
+function parseOpt(line) { const m = line.trim().match(/^-\s*(.+?)\s*->\s*(\S+)$/); return m ? { text: m[1], target: m[2] } : null; }
+function parseIf(line) { const m = line.trim().match(/^@if\s+(\w+)\s*(==|!=|>=|<=|>|<)\s*(\S+)\s*->\s*(\S+)$/); return m ? { key: m[1], op: m[2], val: m[3], target: m[4] } : null; }
+// 這一行會跳去哪裡（只有選項、@jump、@if 有）
+function targetOf(i) {
+  const k = kinds[i];
+  if (k === 'opt') { const o = parseOpt(lines[i]); return o && o.target; }
+  if (k === 'cmd') {
+    const c = parseCmd(lines[i]);
+    if (c.name === 'jump') return c.args[0] || null;
+    if (c.name === 'if') { const f = parseIf(lines[i]); return f && f.target; }
+  }
+  return null;
+}
+function blockStartOf(i) {
+  for (let k = i; k >= 0; k--) { if (kinds[k] === 'choiceStart') return k; if (kinds[k] !== 'opt' && kinds[k] !== 'choiceEnd') return i; }
+  return i;
+}
+function blockEndOf(s) { let e = s + 1; while (e < lines.length && kinds[e] !== 'choiceEnd') e++; return Math.min(e, lines.length - 1); }
+function refsTo(name) {
+  const out = [];
+  kinds.forEach((k, i) => { if (targetOf(i) === name) out.push(k === 'opt' ? blockStartOf(i) : i); });
+  return [...new Set(out)];
+}
+const isTerminator = p => kinds[p] === 'choiceEnd' || (kinds[p] === 'cmd' && ['jump', 'chapter', 'end'].includes(parseCmd(lines[p]).name));
+
+// 預覽用的畫面狀態（可辨認分支）：在某個標籤底下的句子，起點是「第一個跳到這個標籤的地方」的畫面，而不是檔案上一句的畫面
+function stateAt(j) { return stateAtGuard(Math.min(j, lines.length), new Set()); }
+function stateAtGuard(j, seen) {
+  if (stateCache.has(j)) return JSON.parse(JSON.stringify(stateCache.get(j)));
+  let L = -1;
+  for (let i = j - 1; i >= 0; i--) if (kinds[i] === 'label') { L = i; break; }
+  let V;
+  if (L < 0) V = blankV();
+  else if (seen.has(L)) V = blankV();                                         // 迴圈保護
+  else {
+    seen.add(L);
+    let p = L - 1; while (p >= 0 && (kinds[p] === 'blank' || kinds[p] === 'comment')) p--;
+    const falls = p >= 0 && !isTerminator(p);                                  // 上一段沒有跳走 → 直接接下來
+    const refs = refsTo(labelName(lines[L])).filter(r => r < L || true);
+    if (!falls && refs.length) V = stateAtGuard(Math.min(...refs), seen);      // 取最前面那個跳轉點當起點
+    else V = stateAtGuard(L, seen);
+    seen.delete(L);
+  }
+  for (let i = L + 1; i < j && i < lines.length; i++) if (kinds[i] === 'cmd') applyCmd(V, parseCmd(lines[i]));
+  stateCache.set(j, JSON.parse(JSON.stringify(V)));
+  return V;
+}
+
+function renderRefBar() {
+  const bar = $('#refbar'); bar.textContent = '';
+  const k = kinds[sel];
+  if (k === undefined) return;
+  const lm = labelMap();
+  const add = (t, cls) => { const s = document.createElement('span'); s.textContent = t; if (cls) s.className = cls; bar.appendChild(s); };
+  const link = (t, line) => { const b = document.createElement('button'); b.textContent = t; b.onclick = () => { sel = line; renderAll(); }; bar.appendChild(b); };
+  if (k === 'label') {
+    const name = labelName(lines[sel]), r = refsTo(name);
+    add(`標籤「${name}」：`);
+    if (!r.length) add('沒有任何地方跳到這裡（主線，或還沒接起來）', 'warn');
+    else { add(`被 ${r.length} 處跳到 `); r.forEach(x => link(`第${x + 1}行`, x)); }
+  } else {
+    const t = targetOf(sel);
+    if (!t) return;
+    if (t.includes('/')) add(`→ 另一個章節：${t}`);
+    else if (t in lm) { add(`→ 標籤「${t}」 `); link(`前往第${lm[t] + 1}行`, lm[t]); }
+    else add(`⚠ 找不到標籤「${t}」，玩家選到這裡會卡住`, 'bad');
+  }
+}
+
+// ----- 共用的小零件 -----
+function modalBox() { const m = $('#edit-modal'), b = m.querySelector('.box'); b.textContent = ''; return { m, b }; }
+function field(label, el) { const l = document.createElement('label'); l.className = 'fld'; l.append(document.createTextNode(label + ' '), el); return l; }
+function mkSelect(items, value) {
+  const s = document.createElement('select');
+  items.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; s.appendChild(o); });
+  s.value = value; return s;
+}
+function mkInput(value, ph, w) { const i = document.createElement('input'); i.type = 'text'; i.value = value || ''; if (ph) i.placeholder = ph; if (w) i.style.width = w; return i; }
+function modalButtons(box, onOk, okText) {
+  const msg = document.createElement('div'); msg.className = 'msg-err'; box.appendChild(msg);
+  const btns = document.createElement('div'); btns.className = 'btns';
+  const ok = document.createElement('button'); ok.textContent = okText || '確定';
+  const no = document.createElement('button'); no.textContent = '取消';
+  ok.onclick = () => { msg.textContent = ''; const err = onOk(); if (err) msg.textContent = err; };
+  no.onclick = () => { closeEditModal(); };
+  btns.append(ok, no); box.appendChild(btns);
+  return msg;
+}
+function modalKeys(m, confirm) {
+  m.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); closeEditModal(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirm(); }
+  };
+}
+const LABEL_OK = /^[^\s*@#<>\/\\]{1,40}$/;
+// 流程指令預設插入位置：選取行的後面；選到選項區塊的話放在整個區塊後面
+function flowInsertPos() { return (kinds[sel] === 'choiceStart' || kinds[sel] === 'opt' || kinds[sel] === 'choiceEnd') ? blockEndOf(blockStartOf(sel)) + 1 : Math.min(lines.length, sel + 1); }
+
+// ----- 選項區塊 -----
+function showChoiceModal(startIdx) {
+  const isNew = startIdx == null;
+  const { m, b } = modalBox();
+  let s = startIdx, e = -1, opts = [];
+  if (!isNew) {
+    e = blockEndOf(s);
+    for (let k = s + 1; k < e; k++) if (kinds[k] === 'opt') opts.push(parseOpt(lines[k]) || { text: lines[k].trim().replace(/^-\s*/, ''), target: '' });
+  } else opts = [{ text: '', target: '' }, { text: '', target: '' }];
+  const lm = labelMap(), names = Object.keys(lm);
+  const h = document.createElement('h3'); h.textContent = isNew ? '新增選項區塊' : '編輯選項區塊'; b.appendChild(h);
+  const hint = document.createElement('div'); hint.className = 'ctx';
+  hint.textContent = '每個選項要寫：顯示給玩家看的文字，以及選了之後跳到哪個標籤。跳轉位置如果選「新增標籤」，編輯器會自動在選項區塊後面建立那一段劇情的空白版本。';
+  b.appendChild(hint);
+  const list = document.createElement('div'); list.className = 'opt-list'; b.appendChild(list);
+  const rows = opts.map(o => {
+    const known = o.target && names.includes(o.target);
+    const mode = !o.target ? '' : known ? o.target : o.target.includes('/') ? '__other__' : '__new__';
+    return { text: o.text, mode, custom: known ? '' : o.target };
+  });
+  const draw = () => {
+    list.textContent = '';
+    rows.forEach((r, i) => {
+      const row = document.createElement('div'); row.className = 'opt-row';
+      const tx = mkInput(r.text, `選項 ${i + 1} 的文字`); tx.oninput = () => { r.text = tx.value; };
+      const sl = mkSelect([['', '（選擇跳轉位置）'], ...names.map(n => [n, `→ ${n}`]), ['__new__', '＋新增標籤…'], ['__other__', '→ 其他章節的標籤…']], r.mode);
+      const cu = mkInput(r.custom, r.mode === '__other__' ? '章節id/標籤，例如 ch2/start' : '新標籤名稱（例如 look）', '150px');
+      cu.oninput = () => { r.custom = cu.value; };
+      const sync = () => { cu.hidden = !(r.mode === '__new__' || r.mode === '__other__'); cu.placeholder = r.mode === '__other__' ? '章節id/標籤，例如 ch2/start' : '新標籤名稱（例如 look）'; };
+      sl.onchange = () => { r.mode = sl.value; sync(); }; sync();
+      const up = document.createElement('button'); up.textContent = '↑'; up.disabled = i === 0; up.onclick = () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; draw(); };
+      const dn = document.createElement('button'); dn.textContent = '↓'; dn.disabled = i === rows.length - 1; dn.onclick = () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; draw(); };
+      const rm = document.createElement('button'); rm.textContent = '✕'; rm.title = '刪除這個選項'; rm.disabled = rows.length <= 1; rm.onclick = () => { rows.splice(i, 1); draw(); };
+      row.append(tx, sl, cu, up, dn, rm); list.appendChild(row);
+    });
+  };
+  draw();
+  const add = document.createElement('button'); add.textContent = '＋新增選項'; add.onclick = () => { rows.push({ text: '', mode: '', custom: '' }); draw(); };
+  b.appendChild(add);
+  const merge = mkSelect([['', '（不接，之後自己寫）'], ...names.map(n => [n, `@jump ${n}`])], '');
+  b.appendChild(field('新建立的段落結尾自動接到', merge));
+
+  const confirm = () => {
+    const out = [], news = [];
+    for (const r of rows) {
+      const text = r.text.trim();
+      if (!text) return '有選項還沒填文字';
+      let target = r.mode;
+      if (r.mode === '__new__' || r.mode === '__other__') target = r.custom.trim();
+      if (!target) return `選項「${text}」還沒選跳轉位置`;
+      if (r.mode === '__new__') {
+        if (!LABEL_OK.test(target)) return `標籤名稱「${target}」不能含空白或 * @ # < > / \\ 等符號`;
+        if (names.includes(target)) { r.mode = target; }
+        else if (news.some(n => n.name === target)) { /* 多個選項共用同一個新標籤：只建立一次 */ }
+        else news.push({ name: target, text });
+      }
+      if (r.mode === '__other__' && !target.includes('/')) return `「${target}」要寫成 章節id/標籤，例如 ch2/start`;
+      out.push({ text, target });
+    }
+    const block = ['@choice', ...out.map(o => `- ${o.text} -> ${o.target}`), '@endchoice'];
+    const stubs = [];
+    news.forEach(n => { stubs.push('', `*${n.name}`, `（在這裡寫「${n.text}」之後的劇情）`); if (merge.value) stubs.push(`@jump ${merge.value}`); });
+    closeEditModal();
+    mutate(() => {
+      if (isNew) { const at = flowInsertPos(); lines.splice(at, 0, ...block, ...stubs); sel = at; }
+      else { lines.splice(s, e - s + 1, ...block, ...stubs); sel = s; }
+    });
+    return '';
+  };
+  modalButtons(b, confirm, isNew ? '建立' : '確定');
+  modalKeys(m, confirm);
+  m.hidden = false;
+}
+
+// ----- 其他流程指令：跳轉、旗標、條件、結局、換章節 -----
+const FLOW_TITLES = { jump: '跳轉（@jump）', set: '設定旗標（@set）', if: '條件跳轉（@if）', ending: '結局（@ending）', chapter: '換章節（@chapter）' };
+function showFlowModal(kind, i) {
+  const isNew = i == null;
+  const { m, b } = modalBox();
+  const names = Object.keys(labelMap());
+  const cur = isNew ? { name: kind, args: [] } : parseCmd(lines[i]);
+  const h = document.createElement('h3'); h.textContent = (isNew ? '新增：' : '編輯：') + FLOW_TITLES[kind]; b.appendChild(h);
+  const note = document.createElement('div'); note.className = 'ctx'; b.appendChild(note);
+  const targetSel = (value, withOther) => {
+    const known = value && names.includes(value);
+    const s = mkSelect([['', '（選擇標籤）'], ...names.map(n => [n, `→ ${n}`]), ['__other__', '→ 其他章節的標籤…']], known ? value : value ? '__other__' : '');
+    const c = mkInput(known ? '' : value, '章節id/標籤，例如 ch2/start', '170px');
+    const sync = () => { c.hidden = s.value !== '__other__'; }; s.onchange = sync; sync();
+    return { s, c, get: () => (s.value === '__other__' ? c.value.trim() : s.value) };
+  };
+  let build;
+  if (kind === 'jump') {
+    note.textContent = '跳到同一章節裡的某個標籤；一般用在選項分支走完之後，匯合回主線。';
+    const t = targetSel(cur.args[0] || '');
+    b.appendChild(field('跳到', t.s)); b.appendChild(t.c);
+    build = () => { const v = t.get(); return v ? `@jump ${v}` : null; };
+  } else if (kind === 'set') {
+    note.textContent = '記錄玩家的選擇，之後用「條件跳轉」判斷。例如好感度 love += 1。';
+    const mm = (!isNew && lines[i].trim().match(/^@set\s+(\w+)\s*(\+=|-=|=)\s*(.+)$/)) || [];
+    const key = mkInput(mm[1] || '', '旗標名稱（英文，例如 trust）', '150px');
+    const op = mkSelect([['=', '＝（設為）'], ['+=', '＋＝（增加）'], ['-=', '－＝（減少）']], mm[2] || '=');
+    const val = mkInput(mm[3] || '1', '值（數字或文字）', '110px');
+    b.append(field('旗標', key), field('動作', op), field('值', val));
+    build = () => (/^\w+$/.test(key.value.trim()) && val.value.trim() ? `@set ${key.value.trim()}${op.value}${val.value.trim()}` : null);
+  } else if (kind === 'if') {
+    note.textContent = '如果條件成立就跳到指定標籤；不成立就繼續往下讀。沒有「否則」，要用下一行的 @jump 處理。';
+    const f = (!isNew && parseIf(lines[i])) || {};
+    const key = mkInput(f.key || '', '旗標名稱', '130px');
+    const op = mkSelect(['==', '!=', '>=', '<=', '>', '<'].map(x => [x, x]), f.op || '>=');
+    const val = mkInput(f.val || '1', '值', '90px');
+    const t = targetSel(f.target || '');
+    b.append(field('如果', key), field('', op), field('', val), field('就跳到', t.s)); b.appendChild(t.c);
+    build = () => (/^\w+$/.test(key.value.trim()) && val.value.trim() && t.get() ? `@if ${key.value.trim()} ${op.value} ${val.value.trim()} -> ${t.get()}` : null);
+  } else if (kind === 'ending') {
+    note.textContent = '記錄玩家達成的結局（會出現在標題畫面的「結局列表」），並顯示結局橫幅，玩家點擊後繼續往下。';
+    const nm = mkInput(cur.args.join(' '), '結局名稱，例如 平安抵達', '220px');
+    b.appendChild(field('結局名稱', nm));
+    build = () => (nm.value.trim() ? `@ending ${nm.value.trim()}` : null);
+  } else if (kind === 'chapter') {
+    note.textContent = '直接跳到另一章（也可以指定那一章的標籤）。不寫的話，章節結尾會自動接下一章。';
+    const ids = (cfg.chapters || []).map(c => [c.id, `${c.id}　${c.title}`]);
+    const ch = mkSelect(ids, cur.args[0] || (ids[0] && ids[0][0]) || '');
+    const lb = mkInput(cur.args[1] || '', '標籤（可留空）', '130px');
+    b.append(field('章節', ch), field('標籤', lb));
+    build = () => `@chapter ${ch.value}${lb.value.trim() ? ' ' + lb.value.trim() : ''}`;
+  }
+  const confirm = () => {
+    const text = build();
+    if (!text) return '還有欄位沒填好';
+    closeEditModal();
+    if (isNew) mutate(() => { const at = flowInsertPos(); lines.splice(at, 0, text); sel = at; });
+    else mutate(() => { lines[i] = text; });
+    return '';
+  };
+  modalButtons(b, confirm, isNew ? '插入' : '確定');
+  modalKeys(m, confirm);
+  m.hidden = false;
+}
+
+// ----- 標籤：新增、改名（連同所有引用一起改）-----
+function addLabel() {
+  const name = (prompt('新標籤的名稱（不能含空白或 * @ # < > / \\）：') || '').trim();
+  if (!name) return;
+  if (!LABEL_OK.test(name)) { alert('標籤名稱不能含空白或 * @ # < > / \\ 等符號'); return; }
+  if (name in labelMap()) { alert('已經有這個標籤了'); return; }
+  mutate(() => { const at = flowInsertPos(); lines.splice(at, 0, '', `*${name}`); sel = at + 1; });
+}
+function renameLabel(i) {
+  const old = labelName(lines[i]);
+  const nn = (prompt(`把標籤「${old}」改名為（所有跳轉到它的地方會一起更新）：`, old) || '').trim();
+  if (!nn || nn === old) return;
+  if (!LABEL_OK.test(nn)) { alert('標籤名稱不能含空白或 * @ # < > / \\ 等符號'); return; }
+  if (nn in labelMap()) { alert('已經有這個標籤了'); return; }
+  let n = 0;
+  mutate(() => {
+    lines[i] = '*' + nn;
+    kinds.forEach((k, x) => {
+      if (targetOf(x) !== old) return;
+      if (k === 'opt') { const o = parseOpt(lines[x]); lines[x] = `- ${o.text} -> ${nn}`; }
+      else if (parseCmd(lines[x]).name === 'jump') lines[x] = `@jump ${nn}`;
+      else lines[x] = lines[x].replace(/->\s*\S+\s*$/, `-> ${nn}`);
+      n++;
+    });
+  });
+  status(`標籤已改名，同步更新 ${n} 處跳轉`, 'ok');
+}
+function addFlow(kind) {
+  if (kind === 'choice') showChoiceModal(null);
+  else if (kind === 'label') addLabel();
+  else showFlowModal(kind, null);
 }
 
 // ---------- 編輯台詞文字（彈出視窗）----------
@@ -189,6 +459,11 @@ const sayLabel = i => { const s = sayInfo(lines[i] || ''); return (s.who ? chars
 
 function startEdit(i) {
   if (i == null || i < 0 || i >= lines.length || kinds[i] === 'blank') return;
+  const k = kinds[i];
+  sel = i;
+  if (k === 'choiceStart' || k === 'opt' || k === 'choiceEnd') { renderAll(); showChoiceModal(blockStartOf(i)); return; }
+  if (k === 'label') { renderAll(); renameLabel(i); return; }
+  if (k === 'cmd') { const c = parseCmd(lines[i]); if (FLOW_TITLES[c.name]) { renderAll(); showFlowModal(c.name, i); return; } }
   editIdx = i; editNew = false; sel = i; renderAll(); showEditModal(i);
 }
 function closeEditModal() { $('#edit-modal').hidden = true; }
@@ -308,11 +583,13 @@ function moveSelected(d) {
 function renderLines() {
   const box = $('#lines'), keepTop = box.scrollTop;
   box.textContent = '';
-  const j = displayIndex(sel);
+  const j = displayIndex(sel), lmap = labelMap();
   lines.forEach((l, i) => {
     const k = kinds[i];
     const row = document.createElement('div');
     row.className = 'ln ' + (k === 'choiceStart' || k === 'choiceEnd' || k === 'opt' ? 'choice' : k) + (i === sel ? ' sel' : '') + (i === j ? ' disp' : '');
+    const tg = targetOf(i);
+    if (tg && !tg.includes('/') && !(tg in lmap)) row.className += ' badref';
     if (k === 'blank') { box.appendChild(row); row.onclick = () => { sel = i; renderAll(); }; return; }
     const no = document.createElement('span'); no.className = 'no'; no.textContent = i + 1;
     const body = document.createElement('span'); body.className = 'body';
@@ -677,6 +954,7 @@ function openChapterManager() {
 
 // ---------- 事件 ----------
 $('#btn-edit').onclick = () => startEdit(sel);
+$('#add-cmd').onchange = e => { const v = e.target.value; e.target.value = ''; if (v) addFlow(v); };
 $('#btn-add').onclick = addSay;
 $('#btn-del').onclick = deleteSelected;
 $('#btn-up').onclick = () => moveSelected(-1);

@@ -108,3 +108,22 @@ header .sep{width:1px;height:22px;background:var(--line)}
 #edit-modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 #edit-modal .form-row label{display:inline-flex;align-items:center;gap:4px}
 #edit-modal .form-row input[type=number]{font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+
+/* 分支編輯 */
+#toolbar select{font-size:12px;padding:2px 6px}
+#refbar{min-height:26px;padding:4px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#refbar:empty{display:none}
+#refbar button{padding:0 8px;font-size:11px}
+#refbar .warn{color:var(--warn)}
+#refbar .bad{color:#ff7b7b}
+.ln.badref .body{color:#ff9a9a;text-decoration:underline wavy #ff7b7b}
+#edit-modal .fld{display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0}
+#edit-modal input[type=text]{font:inherit;color:var(--text);background:#0e1320;border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+#edit-modal select{max-width:260px}
+#edit-modal .opt-list{display:flex;flex-direction:column;gap:6px;margin:6px 0}
+#edit-modal .opt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#edit-modal .opt-row input[type=text]:first-child{flex:1;min-width:200px}
+#edit-modal .opt-row button{padding:2px 8px}
+#edit-modal .msg-err{color:#ff7b7b;font-size:13px;min-height:18px}
+#toolbar{flex-wrap:wrap}
+#toolbar button,#toolbar select{white-space:nowrap}

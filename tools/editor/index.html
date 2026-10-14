@@ -29,7 +29,18 @@
       <button id="btn-del" title="刪除選取的那一行">刪除</button>
       <button id="btn-up" title="這一行往上移">↑</button>
       <button id="btn-down" title="這一行往下移">↓</button>
+      <select id="add-cmd" title="插入選項、標籤、跳轉、旗標等流程指令">
+        <option value="">＋流程…</option>
+        <option value="choice">選項區塊（@choice）</option>
+        <option value="label">標籤（*名稱）</option>
+        <option value="jump">跳轉（@jump）</option>
+        <option value="set">設定旗標（@set）</option>
+        <option value="if">條件跳轉（@if）</option>
+        <option value="ending">結局（@ending）</option>
+        <option value="chapter">換章節（@chapter）</option>
+      </select>
     </div>
+    <div id="refbar"></div>
     <div id="lines"></div>
   </section>
 
